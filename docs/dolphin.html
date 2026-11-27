@@ -14,8 +14,8 @@
 <style>
 /* Layout: a full-bleed ASCII sea on top, the scene's own source scrolling beneath it */
 :root {
-  --sea: #01050a;
-  --panel: #05090f;
+  --sea: #000000;
+  --panel: #050608;
   --ink: #d3dde8;
   --dim: #6a7f95;
   --faint: #304256;
@@ -714,25 +714,26 @@ function outline() {
 }
 
 // [palette]
-// Every material fades dark -> mid -> bright. Distance dims things towards
-// black, which is all the fog a black sea needs. Brightness also picks the
+// Every material fades dark -> mid -> bright. The sea is pure black and
+// everything but the dolphins is kept dim and muted, so they stand out.
+// Distance dims things towards black, which is all the fog it needs. Brightness also picks the
 // glyph: the dolphins sit high on the ramp, in the dense letters.
 const LV = 14;
 const RAMP = '.:-=+*o08%$QB&@';
 const STOPS = [null,
-  [[22, 40, 66], [86, 128, 182], [178, 214, 248]],    // 1 cape
-  [[40, 52, 70], [146, 168, 196], [226, 238, 250]],   // 2 flank
+  [[40, 62, 92], [120, 166, 222], [214, 236, 255]],   // 1 cape
+  [[64, 72, 84], [178, 192, 210], [240, 246, 252]],   // 2 flank
   [[70, 70, 76], [214, 216, 222], [255, 252, 244]],   // 3 belly
   [[2, 4, 8], [6, 10, 16], [14, 20, 28]],             // 4 eye
-  [[34, 30, 24], [120, 110, 88], [214, 200, 160]],    // 5 sand
-  [[16, 44, 62], [70, 150, 176], [190, 236, 248]],    // 6 surface
-  [[30, 26, 26], [104, 92, 84], [190, 172, 152]],     // 7 rock
-  [[18, 40, 24], [74, 146, 80], [176, 226, 136]],     // 8 seagrass
+  [[20, 18, 15], [78, 72, 60], [140, 130, 108]],      // 5 sand
+  [[14, 20, 26], [60, 78, 92], [130, 150, 164]],      // 6 surface
+  [[22, 20, 20], [78, 70, 64], [140, 128, 114]],      // 7 rock
+  [[14, 28, 18], [56, 104, 60], [120, 168, 100]],     // 8 seagrass
   [[46, 54, 66], [180, 190, 200], [255, 236, 190]],   // 9 fish
   [[40, 72, 92], [152, 212, 232], [242, 252, 255]],   // 10 bubbles, spray
   null,                                               // 11 (unused)
   [[70, 26, 14], [236, 110, 52], [255, 198, 128]],    // 12 starfish
-  [[26, 40, 54], [74, 98, 120], [150, 172, 190]]];    // 13 marine snow
+  [[22, 24, 28], [60, 64, 72], [110, 116, 126]]];     // 13 marine snow
 const COLORS = [], GLYPH = [];
 for (let m = 0; m < STOPS.length; m++) for (let l = 0; l < LV; l++) {
   if (!STOPS[m]) { COLORS.push('#000'); continue; }
@@ -774,7 +775,7 @@ function present() {
   vctx.setTransform(1, 0, 0, 1, 0, 0);
   vctx.globalCompositeOperation = 'source-over'; vctx.globalAlpha = 1;
   const g = vctx.createLinearGradient(0, 0, 0, view.height);
-  g.addColorStop(0, '#041019'); g.addColorStop(0.6, '#01050a'); g.addColorStop(1, '#000203');
+  g.addColorStop(0, '#000000'); g.addColorStop(1, '#000000');
   vctx.fillStyle = g; vctx.fillRect(0, 0, view.width, view.height);
   bctx.clearRect(0, 0, bloom.width, bloom.height); bctx.drawImage(txt, 0, 0, bloom.width, bloom.height);
   vctx.imageSmoothingEnabled = true; vctx.globalCompositeOperation = 'lighter'; vctx.globalAlpha = 0.45;
