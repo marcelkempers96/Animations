@@ -113,7 +113,7 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
       </div>
       <div class="row">
         <span class="hint" id="hint">drag to look around</span>
-        <label class="detail" for="detail">detail <input type="range" id="detail" min="1" max="10" step="1" value="5"></label>
+        <label class="detail" for="detail">detail <input type="range" id="detail" min="1" max="20" step="1" value="10"></label>
         <button class="tool" id="showSrc" type="button">Code</button>
         <button class="tool" id="full" type="button">Full screen</button>
       </div>
@@ -166,13 +166,13 @@ const _l = Math.hypot(0.25, 1, 0.3), LX = 0.25 / _l, LY = 1 / _l, LZ = 0.3 / _l;
 let W = 1, H = 1, DPR = 1, FONT = 12, CW = 7, CH = 15, COLS = 1, ROWS = 1, OX = 0, OY = 0;
 let depth, lum, mat, chr, glass, kind, nsx, nsy, bucket, order;
 const SOLID = 1, LINE = 2, GROUND = 3, CEIL = 4, MOTE = 5, EDGE = 6;
-let SNX = 0, SNY = 0, DETAIL = 0;
+let SNX = 0, SNY = 0, DETAIL = 10;
 function resize() {
   const r = stage.getBoundingClientRect();
   W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, window.devicePixelRatio || 1);
   view.width = txt.width = Math.round(W * DPR); view.height = txt.height = Math.round(H * DPR);
   bloom.width = Math.max(1, Math.round(W / 4)); bloom.height = Math.max(1, Math.round(H / 4));
-  FONT = DETAIL ? 16 - DETAIL : W < 560 ? 9 : W < 1100 ? 11 : 12;   // the Detail slider sets the cell size
+  FONT = 15 * Math.pow(0.2, (DETAIL - 1) / 19);   // the Detail slider sets the cell size: 15px coarse, 3px super fine
   tctx.font = Math.round(FONT * DPR) + 'px ' + MONO;
   CW = Math.max(2, Math.round(tctx.measureText('M').width)); CH = Math.round(FONT * DPR * 1.25);
   COLS = Math.max(1, Math.floor(view.width / CW)); ROWS = Math.max(1, Math.floor(view.height / CH));
@@ -201,15 +201,16 @@ function setCamera(dt) {
   TX = A.cx; TY = A.cy; TZ = A.cz;
   const yaw = -cam.head + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
   const pitch = clamp(VIEW.pitch + cam.dpitch, -1.0, 1.2);
-  CX = TX + cam.dist * Math.cos(pitch) * Math.sin(yaw);
-  CY = TY + cam.dist * Math.sin(pitch);
-  CZ = TZ + cam.dist * Math.cos(pitch) * Math.cos(yaw);
+  const dist = VIEW.dist || cam.dist;
+  CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
+  CY = TY + dist * Math.sin(pitch);
+  CZ = TZ + dist * Math.cos(pitch) * Math.cos(yaw);
   FX = TX - CX; FY = TY - CY; FZ = TZ - CZ;
   const f = Math.hypot(FX, FY, FZ); FX /= f; FY /= f; FZ /= f;
   const r = Math.hypot(FZ, FX) || 1e-6; RX = -FZ / r; RZ = FX / r;   // right = forward x up
   UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;              // up = right x forward
   ASP = CW / CH;
-  FOC = Math.min((ROWS / 2) * cam.dist / (VIEW.half * ASP), (COLS / 2) * cam.dist / VIEW.side);
+  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * ASP), (COLS / 2) * dist / VIEW.side);
 }
 
 // [projection]
@@ -265,8 +266,8 @@ function fresnel(x, y, z, nx, ny, nz) {
 // resampled by arc length so speed means speed. A route can be reshaped as
 // it is built: the shark's is pressed flat just above the seagrass, so it
 // cruises level and never rises and falls like a dolphin.
-const ROUTE_A = [[-4.6, -0.55, 0.7], [-2.2, -1.0, 0.95], [0.4, -0.75, 0.55], [2.1, 0.25, 0.25],
-                 [3.35, 2.05, 0.05], [4.55, 0.25, -0.3], [5.1, -0.95, -1.4], [3.6, -1.2, -2.5],
+const ROUTE_A = [[-4.6, -0.55, 0.7], [-2.2, -1.0, 0.95], [-0.2, -0.85, 0.6], [1.4, 0.55, 0.35],
+                 [3.4, 3.1, 0.05], [5.4, 0.55, -0.3], [6.4, -0.95, -1.4], [3.6, -1.2, -2.5],
                  [0.6, -0.6, -2.7], [-2.4, 0.15, -2.4], [-4.7, -0.25, -1.6], [-5.7, -0.6, -0.3]];
 const ROUTE_B = [[4.8, -0.2, -0.9], [2.6, -0.9, 0.9], [0.2, -1.15, 1.6], [-2.4, -0.5, 1.2],
                  [-4.2, 0.4, -0.2], [-5.4, 1.85, -1.0], [-6.2, 0.1, -1.6], [-5.0, -1.0, -2.9],
@@ -276,9 +277,10 @@ const ROUTE_POD = [[-11, -0.4, -5.2], [-4, -0.7, -5.4], [3, -0.3, -5.0], [11, -0
 const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [1.6 * Math.cos(a), -0.35 + 0.12 * Math.sin(2 * a) - (i === 7 ? 0.25 : 0), -0.3 + 1.05 * Math.sin(a)]; });
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
-// the reef camera runs along one side of the coral ridge and back down
-// the other, so it always looks in at the reef
-const REEF_ROUTE = [[-8, -0.75, 0.9], [-4, -0.72, 1.0], [0, -0.78, 0.9], [4, -0.72, 1.0], [8, -0.75, 0.9],
+// the reef camera drifts in a wide loop over the whole reef, looking down
+const REEF_ROUTE = Array.from({ length: 14 }, (_, i) => { const a = -i / 14 * TAU; return [11 * Math.cos(a) + 1.5 * Math.sin(2 * a), FLOOR + 0.25, -2.5 + 6.5 * Math.sin(a)]; });
+const REEF_TURTLE = Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU; return [8 * Math.cos(a), FLOOR + 1.0 + 0.2 * Math.sin(3 * a), -2.5 + 5 * Math.sin(a) + 1.5 * Math.sin(2 * a)]; });
+const REEF_ROUTE_OLD = [[-8, -0.75, 0.9], [-4, -0.72, 1.0], [0, -0.78, 0.9], [4, -0.72, 1.0], [8, -0.75, 0.9],
                     [10, -0.75, -0.6], [8, -0.75, -2.1], [4, -0.72, -2.2], [0, -0.78, -2.1], [-4, -0.72, -2.2], [-8, -0.75, -2.1], [-10, -0.75, -0.6]];
 const LEVEL = ([x, y, z]) => [x, FLOOR + 0.62 + (y + 0.35) * 0.05, z];
 function buildPath(route, shape) {
@@ -397,7 +399,7 @@ function screenNormal() { SNX = NX * RX + NZ * RZ; SNY = -(NX * UX + NY * UY + N
 function swimDolphin(o, dt) {
   const { BP, BU, SPn, ST, SU, SS } = o;
   pathAt(o.path, o.d + 1.6);
-  const want = o.base + 1.0 * smooth(0.2, 1.6, QY);
+  const want = o.base + 1.0 * smooth(0.2, 1.6, QY) + 1.4 * smooth(1.3, 2.6, QY);   // it leaves the water fast
   o.speed += (want - o.speed) * Math.min(1, dt * 1.2);
   o.d = (o.d + o.speed * dt) % o.path.lap;
   o.freq = 0.3 + 0.5 * o.speed;
@@ -1153,7 +1155,30 @@ function drawAnemones(t) {
 // Where the reef has built up, the ground rises into mounds of old reef
 // rock crusted with pink coralline algae. The surface overhead is a sparse
 // field of ripples. Open water stays black.
+let sandLum = null;
+function castSand(t) {
+  if (!sandLum || sandLum.length !== COLS * ROWS) sandLum = new Float32Array(COLS * ROWS);
+  sandLum.fill(0);
+  const ia = 1 / FOC, ib = 1 / (FOC * ASP), sh = animals.filter(o => o.kind !== KINDS.glide);
+  for (let y = 0; y < ROWS; y++) {
+    const b = -(y + 0.5 - ROWS / 2) * ib;
+    for (let x = 0; x < COLS; x++) {
+      const a = (x + 0.5 - COLS / 2) * ia, dy = FY + UY * b;
+      if (dy > -1e-4) continue;
+      const d = (FLOOR - CY) / dy, wx = CX + (FX + RX * a + UX * b) * d, wz = CZ + (FZ + RZ * a + UZ * b) * d;
+      const rip = Math.sin(wx * 7 + 2 * Math.sin(wz * 1.1) + 0.6 * Math.sin(wz * 3.7)), fine = Math.sin(wx * 31 + wz * 7) * Math.sin(wz * 29 - wx * 5);
+      let c = (Math.sin(wx * 2.1 + t * 0.8 + Math.sin(wz * 1.7 + t * 0.45)) + Math.sin(wz * 2.5 - t * 0.6 + Math.sin(wx * 1.6 - t * 0.35))) * 0.25 + 0.5;
+      c *= c * c;
+      let shade = 1;
+      for (const o of sh) { const h = Math.max(0.1, o.cy - FLOOR), qx = wx - (o.cx - LX / LY * h), qz = wz - (o.cz - LZ / LY * h); shade *= 1 - 0.55 * Math.exp(-(qx * qx + qz * qz) / (0.25 + 0.1 * h)); }
+      const L = (0.62 + 0.08 * rip + 0.05 * fine + 0.28 * c) * shade, i = y * COLS + x;
+      sandLum[i] = Math.min(1, L * Math.exp(-Math.max(0, d - 9) * 0.08));
+      if (d < depth[i]) { depth[i] = d; lum[i] = L; mat[i] = 5; chr[i] = (x + y * 3) % 3 ? 0 : rip > 0.6 ? 58 : fine > 0.3 ? 44 : 46; if (!chr[i]) { lum[i] = 0; mat[i] = 0; } else lum[i] = 0.95; glass[i] = 0; kind[i] = GROUND; }
+    }
+  }
+}
 function drawSeabed(t) {
+  if (ENV.cast) castSand(t);
   const st = ENV.sandStep || 0.17, span = ENV.sandSpan || 7, n = Math.ceil(2 * span / st);
   const x0 = Math.floor((TX - span) / st) * st, z0 = Math.floor((TZ - span) / st) * st, gain = ENV.sandGain || 1;
   const sh = animals.filter(o => o.kind !== KINDS.glide).map(o => {
@@ -1179,12 +1204,14 @@ function drawSeabed(t) {
         plot(x, g, z, (0.16 + 0.3 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.15 * c) * shade, pink ? 49 : 7, pink ? 37 : 58, 0, 0, GROUND);
         continue;
       }
+      if (ENV.cast) continue;
       const rip = Math.sin(x * 9 + 2 * Math.sin(z * 1.3) + 0.6 * Math.sin(z * 4.1));
       const L = (0.2 + 0.12 * rip + 0.5 * c) * shade * gain, y = FLOOR + 0.05 * Math.sin(0.9 * x + 0.4 * Math.sin(0.7 * z)) + 0.008 * rip;
       plot(x, y, z, L, ENV.sandMat || 5, ENV.sandMat ? 46 : rip > 0.55 ? 58 : rip > -0.2 ? 46 : 44, 0, 0, GROUND);
     }
   }
   SNX = SNY = 0;
+  if (ENV.noSurface) return;
   const sw = 0.24, u0 = Math.floor((TX - 7) / sw) * sw, w0 = Math.floor((TZ - 7) / sw) * sw;
   for (let a = 0; a < 59; a++) {
     const x = u0 + a * sw;
@@ -1351,22 +1378,30 @@ function ground(x, z) {
   const fu = u - i, fv = v - j, k = j * HM.nx + i, d = HM.h;
   return FLOOR + (d[k] * (1 - fu) + d[k + 1] * fu) * (1 - fv) + (d[k + HM.nx] * (1 - fu) + d[k + HM.nx + 1] * fu) * fv;
 }
-function makeMounds(seed, n) {
+function makeMounds(seed, n, wide) {
   const R = rng(seed), blobs = [];
   for (let i = 0; i < n; i++) {
-    const x = -9 + (i + 0.5) * 18 / n + (R() - 0.5) * 0.6, z = -0.6 + (R() - 0.5) * 0.5;
+    const x = wide ? -17 + R() * 34 : -9 + (i + 0.5) * 18 / n + (R() - 0.5) * 0.6;
+    const z = wide ? -13 + R() * 21 : -0.6 + (R() - 0.5) * 0.5;
+    if (wide && reefGap(x, z)) continue;
     for (let k = 0; k < 3; k++) blobs.push([x + (R() - 0.5) * 1.0, z + (R() - 0.5) * 1.0, 0.4 + R() * 0.5, 0.06 + R() * 0.14]);
   }
-  const st = 0.05, x0 = -12, z0 = -6, nx = 481, nz = 201, h = new Float32Array(nx * nz);
+  const st = 0.06, x0 = wide ? -19 : -12, z0 = wide ? -15 : -6, nx = wide ? 634 : 401, nz = wide ? 434 : 168, h = new Float32Array(nx * nz);
+  for (const [bx, bz, r, hh] of blobs) {
+    const i0 = Math.max(0, Math.floor((bx - 3 * r - x0) / st)), i1 = Math.min(nx - 1, Math.ceil((bx + 3 * r - x0) / st));
+    const j0 = Math.max(0, Math.floor((bz - 3 * r - z0) / st)), j1 = Math.min(nz - 1, Math.ceil((bz + 3 * r - z0) / st));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const d2 = ((x0 + i * st - bx) ** 2 + (z0 + j * st - bz) ** 2) / (r * r);
+      if (d2 < 9) h[j * nx + i] += hh * Math.exp(-d2);
+    }
+  }
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-    const x = x0 + i * st, z = z0 + j * st;
-    let y = 0;
-    for (const [bx, bz, r, hh] of blobs) { const d2 = ((x - bx) ** 2 + (z - bz) ** 2) / (r * r); if (d2 < 9) y += hh * Math.exp(-d2); }
-    y += y > 0.05 ? 0.03 * Math.sin(x * 9) * Math.sin(z * 8) : 0;           // rough rock
-    h[j * nx + i] = y;
+    const k = j * nx + i; if (h[k] > 0.05) h[k] += 0.03 * Math.sin((x0 + i * st) * 9) * Math.sin((z0 + j * st) * 8);   // rough rock
   }
   return { x0, z0, st, nx, nz, h };
 }
+// sand channels winding through the reef, where nothing grows
+const reefGap = (x, z) => Math.abs(z + 2 + 2.2 * Math.sin(x * 0.28) + 0.8 * Math.sin(x * 0.7)) < 0.9 || Math.abs(x - 3 + 2.5 * Math.sin(z * 0.35)) < 0.7;
 function makeCorals(preset, seed) {
   const R = rng(seed), out = [];
   const N = preset === 'reef'
@@ -1423,16 +1458,18 @@ function makeCorals(preset, seed) {
   for (let i = 0; i < N.clam; i++) { const [x, z, y] = spot(); out.push({ type: 'clam', x, y, z, r: (0.14 + R() * 0.08) * big, rot: R() * TAU }); }
   if (reef) {                    // replace the scatter with coral heads spaced along the ridge
     out.length = 0;
-    const heads = 13, near = (x, z) => [x, z, ground(x, z)];
-    for (let h = 0; h < heads; h++) {
-      const hx = -9 + (h + 0.5) * 18 / heads + (R() - 0.5) * 0.4, hz = -0.6 + (R() - 0.5) * 0.3;
+    const near = (x, z) => [x, z, ground(x, z)], cells = [];
+    for (let gx = -16; gx <= 16; gx += 1.9) for (let gz = -12; gz <= 7; gz += 1.9) cells.push([gx, gz]);
+    for (const [gx, gz] of cells) {
+      const hx = gx + (R() - 0.5) * 0.9, hz = gz + (R() - 0.5) * 0.9;
+      if (reefGap(hx, hz) || R() < 0.15) continue;
       const base = pick(['porites', 'brain', 'table', 'porites', 'table']);
       let [x, z, y] = near(hx, hz);
       if (base === 'porites') out.push({ type: 'porites', x, y, z, r: 0.45 + R() * 0.3, seed: R() * 10 });
       if (base === 'brain') out.push({ type: 'brain', x, y, z, r: 0.35 + R() * 0.2, seed: R() * 10 });
       if (base === 'table') out.push({ type: 'table', x, y, z, h: 0.35 + R() * 0.25, R: 0.6 + R() * 0.35, tiers: R() < 0.5 ? 2 : 1, tilt: (R() - 0.5) * 0.1 });
       [x, z, y] = near(hx - 0.2 + (R() - 0.5) * 0.3, hz - 0.35);                // behind: a fan or a whip
-      if (R() < 0.6) { const segs = []; fanSegs(segs, 0, 0, Math.PI / 2, 0.2 + R() * 0.05, 0); out.push({ type: 'fan', x, y, z, segs, rot: (R() - 0.5) * 0.4, ph: R() * TAU, m: R() < 0.7 ? 40 : 18 }); }
+      if (R() < 0.35) {} else if (R() < 0.6) { const segs = []; fanSegs(segs, 0, 0, Math.PI / 2, 0.2 + R() * 0.05, 0); out.push({ type: 'fan', x, y, z, segs, rot: (R() - 0.5) * 0.4, ph: R() * TAU, m: R() < 0.7 ? 40 : 18 }); }
       else for (let k = 0; k < 3; k++) out.push({ type: 'whip', x: x + k * 0.12, y, z: z + k * 0.05, h: 0.9 + R() * 0.7, ph: R() * TAU, m: R() < 0.6 ? 41 : 18 });
       [x, z, y] = near(hx + 0.45 + (R() - 0.5) * 0.2, hz + (R() - 0.5) * 0.3);   // beside: a branching thicket, a soft coral or a sponge
       const side = pick(['acropora', 'acropora', 'dendro', 'sponge', 'leather', 'plate']);
@@ -1471,8 +1508,10 @@ function dome(cx, cy, cz, r, h, m, ppu, texture) {
 }
 function drawCorals(t) {
   for (const c of ENV.corals) {
-    if (Math.abs(c.x - TX) > 7.5 || Math.abs(c.z - TZ) > 6 || !project(c.x, c.y + 0.2, c.z)) continue;
+    const cx0 = ENV.cull ? ENV.cull[0] : 7.5, cz0 = ENV.cull ? ENV.cull[1] : 6;
+    if (Math.abs(c.x - TX) > cx0 || Math.abs(c.z - TZ) > cz0 || !project(c.x, c.y + 0.2, c.z)) continue;
     const ppu = FOC / PZ;
+    if (PX < -ppu * 1.5 || PX > COLS + ppu * 1.5 || PY < -ppu || PY > ROWS + ppu) continue;
     if (c.type === 'acropora') {
       const sway = 0.015 * Math.sin(t * 0.8 + c.ph);
       for (const [ax, ay, az, bx, by, bz, r0, r1, tip] of c.segs)
@@ -1719,7 +1758,7 @@ const STOPS = [null,
   [[80, 80, 80], [206, 206, 204], [250, 250, 248]],   // 2 flank mark
   [[84, 84, 86], [226, 228, 230], [255, 255, 255]],   // 3 belly
   [[2, 4, 8], [6, 10, 16], [14, 20, 28]],             // 4 eye
-  [[56, 48, 34], [184, 160, 118], [248, 232, 196]],   // 5 sand: beige
+  [[90, 78, 56], [214, 192, 150], [255, 244, 214]],   // 5 sand: beige
   [[14, 20, 26], [60, 78, 92], [130, 150, 164]],      // 6 surface
   [[30, 28, 28], [104, 96, 90], [180, 168, 156]],     // 7 rock
   [[14, 28, 18], [56, 104, 60], [120, 168, 100]],     // 8 seagrass
@@ -1768,7 +1807,10 @@ const STOPS = [null,
   [[120, 34, 4], [255, 122, 22], [255, 196, 92]],     // 51 clownfish orange
   [[150, 146, 140], [250, 248, 240], [255, 255, 255]], // 52 clownfish white
   [[18, 10, 30], [62, 44, 88], [110, 92, 140]],       // 53 clownfish black edges
-  [[54, 50, 68], [188, 184, 210], [246, 244, 255]]];  // 54 anemone: lavender white
+  [[54, 50, 68], [188, 184, 210], [246, 244, 255]],   // 54 anemone: lavender white
+  [[72, 10, 52], [236, 64, 172], [255, 190, 236]],    // 55 fairy wrasse: magenta
+  [[10, 60, 44], [52, 214, 156], [190, 255, 226]],    // 56 parrotfish: green
+  [[60, 24, 84], [168, 104, 255], [228, 204, 255]]];  // 57 purple queen anthias
 const COLORS = [], GLYPH = [];
 function buildColors() {
   COLORS.length = 0;
@@ -1784,13 +1826,13 @@ const counts = new Int32Array(STOPS.length * LV + 1);
 // [compose]
 let drawn = 0;
 function compose() {
-  const n = COLS * ROWS, near = cam.dist + 0.8;
+  const n = COLS * ROWS, near = (VIEW.dist || cam.dist) + 0.8 + (VIEW.dist ? 9 : 0);
   counts.fill(0); drawn = 0;
   for (let i = 0; i < n; i++) {
     if (!mat[i]) { bucket[i] = -1; continue; }
     const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3) : lum[i];
     if (vis < 0.05) { bucket[i] = -1; continue; }
-    lum[i] = vis;
+    lum[i] = ENV.cast && kind[i] !== GROUND ? Math.min(1, vis * 1.3 + 0.1) : vis;
     const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
     bucket[i] = b; counts[b + 1]++; drawn++;
   }
@@ -1799,6 +1841,19 @@ function compose() {
   for (let i = 0; i < n; i++) if (bucket[i] >= 0) order[fill[bucket[i]]++] = i;
   tctx.setTransform(1, 0, 0, 1, 0, 0);
   tctx.clearRect(0, 0, txt.width, txt.height);
+  if (ENV.cast) {                         // the reef: paint the sand itself, beige, under the glyphs
+    const n2 = COLS * ROWS, lv = 6;
+    for (let l = 0; l < lv; l++) {
+      const k = 0.15 + 0.85 * l / (lv - 1);
+      tctx.fillStyle = `rgb(${Math.round(118 * k)},${Math.round(100 * k)},${Math.round(70 * k)})`;
+      for (let i = 0; i < n2; i++) {
+        const g = kind[i] === GROUND || (kind[i] === 0 && sandLum[i] > 0);
+        const L = g ? sandLum[i] : sandLum[i] * 0.12;
+        if (!sandLum[i] || Math.min(lv - 1, (L * lv) | 0) !== l) continue;
+        tctx.fillRect(OX + (i % COLS) * CW, OY + ((i / COLS) | 0) * CH, CW, CH);
+      }
+    }
+  }
   tctx.font = Math.round(FONT * DPR) + 'px ' + MONO; tctx.textBaseline = 'top';
   for (let b = 0; b < counts.length - 1; b++) {
     if (counts[b] === counts[b + 1]) continue;
@@ -1865,7 +1920,7 @@ function drawShoals() {
       const tx = PX;
       if (!project(p[i], p[i + 1], p[i + 2])) continue;
       const right = PX >= tx, L = 0.6 + 0.3 * Math.sin(TIME * 3 + i);
-      if (S.small || PZ > 6.5) { put(PX, PY, PZ, L, S.mat, right ? 62 : 60, 0, 0, LINE); continue; }
+      if (S.small || PZ > 12) { put(PX, PY, PZ, L, S.mat, right ? 62 : 60, 0, 0, LINE); continue; }
       const g = right ? [62, 60, 62] : [60, 62, 60], x0 = right ? PX - 2 : PX;
       for (let k = 0; k < 3; k++) put(x0 + k, PY, PZ, L, S.mat, g[k], 0, 0, LINE);
     }
@@ -1911,15 +1966,18 @@ const SCENES = {
       ENV = { rocks: makeRocks(5, 8), tufts: [], meadow: makeMeadow(900, 9, -8, 8, -4, 2.5, 0.35, 0.85), corals: [], shoals: [silver(18, [-1.4, -0.5, -1.3])], stars: makeStars(5, 10) };
       HUNT.prey = null; HUNT.wait = 4;
     } },
-  reef: { rate: 'drift', tag: 'coral triangle', tap: 'drag to look around', view: { half: 0.8, side: 1.5, pitch: 0.1 }, bands: DOLPHIN_BANDS,
+  reef: { rate: 'drift', tag: 'coral triangle', tap: 'drag to look around', view: { dist: 7.5, half: 2.3, side: 4.2, pitch: 1.02 }, bands: DOLPHIN_BANDS,
     build() {
-      HM = makeMounds(30, 13);
-      animals = [makeSwimmer(KINDS.glide, { route: REEF_ROUTE, base: 0.42, start: 0 })];
-      const sh = (n, seed, mat, at, small, spread) => makeShoal({ n, seed, mat, at, small, roam: [0.5, 0.15, 0.4], drift: 0.2, spread, jitter: 0.08 });
-      ENV = { rocks: [], tufts: [], meadow: null, corals: makeCorals('reef', 12), stars: makeStars(10, 13), sandStep: 0.13, sandSpan: 6, sandGain: 1.0,
-              shoals: [sh(60, 21, 22, [-4.5, -0.4, -0.6], true, [1.4, 0.5, 0.8]), sh(60, 22, 22, [3.5, -0.4, -0.6], true, [1.4, 0.5, 0.8]),
-                       sh(40, 23, 23, [-0.5, -0.75, -0.6], true, [1.0, 0.35, 0.7]), sh(30, 24, 23, [7, -0.7, -0.6], true, [1.0, 0.35, 0.7]),
-                       sh(8, 25, 24, [0, -0.3, -0.6], false, [5, 0.4, 1.0])] };
+      HM = makeMounds(30, 45, true);
+      animals = [makeSwimmer(KINDS.glide, { route: REEF_ROUTE, base: 0.55, start: 0 }),
+                 makeSwimmer(KINDS.turtle, { route: REEF_TURTLE, base: 0.42, start: 0.3 })];
+      const sh = (n, seed, mat, at, small, spread, roam) => makeShoal({ n, seed, mat, at, small, roam: roam || [1.2, 0.15, 0.8], drift: 0.12, spread, jitter: 0.08 });
+      const shoals = [], R = rng(77), kinds = [[22, true, 50], [23, true, 40], [24, false, 10], [55, false, 12], [56, false, 8], [57, true, 30], [31, false, 14]];
+      for (let i = 0; i < 16; i++) {
+        const [m, small, n] = kinds[i % kinds.length], x = -14 + R() * 28, z = -10 + R() * 15;
+        shoals.push(sh(n, 200 + i, m, [x, FLOOR + 0.45 + R() * 0.6, z], small, small ? [1.2, 0.4, 1.0] : [2.4, 0.5, 1.6], [1.5 + R() * 2, 0.2, 1 + R() * 1.5]));
+      }
+      ENV = { rocks: [], tufts: [], meadow: null, corals: makeCorals('reef', 12), stars: makeStars(20, 13), cast: true, noSurface: true, cull: [10, 7.5], sandSpan: 10, sandStep: 0.12, shoals };
     } },
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { half: 0.62, side: 1.15, pitch: 0.16 }, bands: DOLPHIN_BANDS,
     build() {
@@ -2026,11 +2084,11 @@ stage.addEventListener('keydown', e => {
 window.scene = { setPaused(v) { paused = v; } };
 const detail = document.getElementById('detail');
 for (const b of document.querySelectorAll('[data-sc]')) b.addEventListener('click', () => setScene(b.dataset.sc));
-try { const v = +localStorage.getItem('reef.detail'); if (v >= 1 && v <= 10) { DETAIL = v; resize(); } } catch (e) {}
-detail.value = DETAIL || 16 - FONT;
+try { const v = +localStorage.getItem('reef.detail2'); if (v >= 1 && v <= 20) { DETAIL = v; resize(); } } catch (e) {}
+detail.value = DETAIL;
 detail.addEventListener('input', () => {
   DETAIL = +detail.value; resize();
-  try { localStorage.setItem('reef.detail', String(DETAIL)); } catch (e) {}
+  try { localStorage.setItem('reef.detail2', String(DETAIL)); } catch (e) {}
 });
 document.getElementById('ctrl').addEventListener('pointerdown', e => e.stopPropagation());
 const app = document.querySelector('.app'), fsBtn = document.getElementById('full');
