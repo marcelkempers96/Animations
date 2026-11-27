@@ -1,0 +1,1151 @@
+<title>ASCII Reef</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a full-bleed ASCII sea on top, the scene's own source scrolling beneath it */
+:root {
+  --sea: #000000;
+  --panel: #050608;
+  --ink: #d3dde8;
+  --dim: #6a7f95;
+  --faint: #304256;
+  --rule: #132233;
+  --comment: #86a892;
+  --num: #e6ac72;
+  --kw: #9ec4ff;
+  --focus: #8fd6e8;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--sea); color: var(--ink); font-family: var(--mono); overflow: hidden; }
+.app { height: 100%; display: flex; flex-direction: column; }
+.stage { position: relative; flex: 1 1 66%; min-height: 0; touch-action: none; cursor: grab; outline: none; }
+.stage:active { cursor: grabbing; }
+.stage:focus-visible { box-shadow: inset 0 0 0 1px var(--faint); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hud {
+  position: absolute; left: 0; right: 0; display: flex; gap: 1.4em; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap;
+  text-shadow: 0 0 6px var(--sea);
+}
+.hud { top: 12px; flex-wrap: wrap; row-gap: 4px; }
+.hud b { color: var(--ink); font-weight: 400; }
+.hud .tag { margin-left: auto; }
+.bar {
+  position: absolute; left: 0; right: 0; bottom: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 11px; color: var(--dim); cursor: default;
+}
+.hint { margin-right: auto; white-space: nowrap; }
+.seg { display: flex; border: 1px solid var(--faint); border-radius: 4px; overflow: hidden; }
+.seg button {
+  font: inherit; font-size: 12px; background: var(--sea); color: var(--dim); border: 0; padding: 6px 14px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--faint); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--sea); }
+.seg button:focus-visible, .detail input:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; }
+.detail { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.detail input { width: 120px; accent-color: var(--ink); }
+@media (max-width: 480px) { .hint { display: none; } .bar { justify-content: space-between; } }
+.panel { flex: 0 0 34%; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 1px solid var(--rule); }
+.controls {
+  display: flex; align-items: center; gap: 8px; padding-block: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip, .tool {
+  font: inherit; font-size: 11px; background: none; color: var(--dim); border: 1px solid var(--rule);
+  padding: 3px 9px; border-radius: 3px; white-space: nowrap; cursor: pointer;
+}
+.chip:hover, .tool:hover { color: var(--ink); }
+.chip.on { color: var(--ink); border-color: var(--faint); }
+.chip:focus-visible, .tool:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
+.float { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); top: 40px; background: var(--panel); }
+.code {
+  position: relative; flex: 1; min-height: 0; overflow: auto; font-size: 11.5px; line-height: 1.6;
+  padding-block: 2px 24px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.ln { display: flex; white-space: pre; opacity: .38; transition: opacity .5s; }
+.ln.on { opacity: 1; }
+.no { flex: 0 0 4.2em; text-align: right; padding-right: 1.3em; color: var(--faint); user-select: none; }
+.c { color: var(--comment); }
+.k { color: var(--kw); }
+.n { color: var(--num); }
+.progress { height: 2px; background: var(--rule); flex: none; }
+.progress i { display: block; height: 100%; width: 0; background: var(--dim); }
+@media (min-width: 900px) { .panel { flex-basis: 30%; } .code { font-size: 12px; } }
+</style>
+
+<div class="app">
+  <div class="stage" id="stage" tabindex="0" aria-label="Animated ASCII dolphins or reef sharks swimming over a reef; the camera stays on the lead animal. Drag or use arrow keys to orbit, tap or press space to make it react.">
+    <canvas id="view"></canvas>
+    <div class="hud" aria-hidden="true">
+      <span>speed <b id="spd">0.0</b> m/s</span>
+      <span><span id="rate">fluke</span> <b id="hz">0.0</b> Hz</span>
+      <span>depth <b id="dep">0.0</b></span>
+      <span>chars <b id="chars">0</b></span>
+      <span class="tag" id="tag">tursiops · 02</span>
+    </div>
+    <div class="bar" id="ctrl">
+      <span class="hint" id="hint">drag to orbit · tap for bubbles</span>
+      <div class="seg" role="group" aria-label="Animal">
+        <button type="button" data-sp="dolphin" aria-pressed="true">Dolphin</button>
+        <button type="button" data-sp="shark" aria-pressed="false">Shark</button>
+      </div>
+      <label class="detail" for="detail">detail <input type="range" id="detail" min="1" max="10" step="1" value="5"></label>
+    </div>
+    <button class="tool float" id="showSrc" type="button" hidden>Show source</button>
+  </div>
+  <div class="panel" id="panel">
+    <div class="progress"><i id="bar"></i></div>
+    <div class="controls">
+      <div class="chips" id="chips" role="tablist" aria-label="Source sections"></div>
+      <button class="tool" id="pause" type="button">Pause</button>
+      <button class="tool" id="hideSrc" type="button">Hide source</button>
+    </div>
+    <div class="code" id="code"></div>
+  </div>
+</div>
+
+<script id="scene">
+// [setup]
+// Everything visible becomes points: two dolphins or two reef sharks,
+// rocks, seagrass, fish, bubbles, the sand and the surface. Points are projected onto a grid of
+// character cells and each cell keeps the nearest one. The animals are
+// drawn dense and bright; the world around them stays sparse and dark, so
+// the eye goes straight to the animal.
+const TAU = Math.PI * 2, SURF = 1.25, FLOOR = -1.65, METRES = 1.25;
+const MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const stage = document.getElementById('stage');
+const view = document.getElementById('view'), vctx = view.getContext('2d');
+const txt = document.createElement('canvas'), tctx = txt.getContext('2d');
+const bloom = document.createElement('canvas'), bctx = bloom.getContext('2d');
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let TIME = 0, paused = false;
+// sunlight comes from above, a little from the right and from the viewer
+const _l = Math.hypot(0.25, 1, 0.3), LX = 0.25 / _l, LY = 1 / _l, LZ = 0.3 / _l;
+
+// [grid]
+// Cells are measured in device pixels and rounded, so every glyph lands on
+// a whole pixel. Per cell: distance, brightness, material, an explicit
+// glyph (0 = from the ramp), how much may show through it, what kind of
+// thing it is, and its surface normal as seen on screen.
+let W = 1, H = 1, DPR = 1, FONT = 12, CW = 7, CH = 15, COLS = 1, ROWS = 1, OX = 0, OY = 0;
+let depth, lum, mat, chr, glass, kind, nsx, nsy, bucket, order;
+const SOLID = 1, LINE = 2, GROUND = 3, CEIL = 4, MOTE = 5, EDGE = 6;
+let SNX = 0, SNY = 0, DETAIL = 0;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, window.devicePixelRatio || 1);
+  view.width = txt.width = Math.round(W * DPR); view.height = txt.height = Math.round(H * DPR);
+  bloom.width = Math.max(1, Math.round(W / 4)); bloom.height = Math.max(1, Math.round(H / 4));
+  FONT = DETAIL ? 16 - DETAIL : W < 560 ? 9 : W < 1100 ? 11 : 12;   // the Detail slider sets the cell size
+  tctx.font = Math.round(FONT * DPR) + 'px ' + MONO;
+  CW = Math.max(2, Math.round(tctx.measureText('M').width)); CH = Math.round(FONT * DPR * 1.25);
+  COLS = Math.max(1, Math.floor(view.width / CW)); ROWS = Math.max(1, Math.floor(view.height / CH));
+  OX = Math.floor((view.width - COLS * CW) / 2); OY = Math.floor((view.height - ROWS * CH) / 2);
+  const n = COLS * ROWS;
+  depth = new Float32Array(n); lum = new Float32Array(n); glass = new Float32Array(n);
+  nsx = new Float32Array(n); nsy = new Float32Array(n);
+  mat = new Uint8Array(n); chr = new Uint8Array(n); kind = new Uint8Array(n);
+  bucket = new Int16Array(n); order = new Int32Array(n);
+}
+
+// [camera]
+// Locked on the lead animal: it looks at the middle of its body every
+// frame, so it never leaves the centre of the screen. It also swings
+// round, slowly, to stay at its side, because a dolphin or a shark is most
+// recognisable in profile. It frames tightly: the animal fills most of
+// the width. Dragging adds your own angle on top.
+const cam = { dist: 4.0, pitch: 0.08, dyaw: 0, dpitch: 0, head: 0, ready: false };
+let CX = 0, CY = 0, CZ = 0, RX = 1, RZ = 0, UX = 0, UY = 1, UZ = 0, FX = 0, FY = 0, FZ = -1, FOC = 30, ASP = 0.5;
+let TX = 0, TY = 0, TZ = 0;
+function setCamera(dt) {
+  const A = animals[0], h = Math.atan2(A.kz, A.kx);
+  if (!cam.ready) { cam.head = h; cam.ready = true; }
+  let dh = h - cam.head; dh = ((dh + Math.PI) % TAU + TAU) % TAU - Math.PI;
+  cam.head += dh * (1 - Math.exp(-dt * 2.2));
+  TX = A.cx; TY = A.cy; TZ = A.cz;
+  const yaw = -cam.head + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
+  const pitch = clamp(cam.pitch + cam.dpitch, -1.0, 1.2);
+  CX = TX + cam.dist * Math.cos(pitch) * Math.sin(yaw);
+  CY = TY + cam.dist * Math.sin(pitch);
+  CZ = TZ + cam.dist * Math.cos(pitch) * Math.cos(yaw);
+  FX = TX - CX; FY = TY - CY; FZ = TZ - CZ;
+  const f = Math.hypot(FX, FY, FZ); FX /= f; FY /= f; FZ /= f;
+  const r = Math.hypot(FZ, FX) || 1e-6; RX = -FZ / r; RZ = FX / r;   // right = forward x up
+  UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;              // up = right x forward
+  ASP = CW / CH;
+  FOC = Math.min((ROWS / 2) * cam.dist / (0.72 * ASP), (COLS / 2) * cam.dist / 1.08);
+}
+
+// [projection]
+let PX = 0, PY = 0, PZ = 0;
+function project(x, y, z) {
+  const dx = x - CX, dy = y - CY, dz = z - CZ;
+  PZ = dx * FX + dy * FY + dz * FZ;
+  if (PZ < 0.2) return false;
+  PX = COLS * 0.5 + (dx * RX + dz * RZ) / PZ * FOC;
+  PY = ROWS * 0.5 - (dx * UX + dy * UY + dz * UZ) / PZ * FOC * ASP;
+  return true;
+}
+// A point wins its cell if it is nearer, or if it asks to be seen through
+// (see) and the cell holds glass at most that far in front of it.
+function put(px, py, pz, L, m, ch, see, gl, k) {
+  if (px < 0 || py < 0 || px >= COLS || py >= ROWS) return;
+  const i = (py | 0) * COLS + (px | 0), d = depth[i];
+  if (!(pz < d || pz < d + Math.min(see, glass[i]))) return;
+  depth[i] = pz < d ? pz : d; lum[i] = L; mat[i] = m; chr[i] = ch; glass[i] = gl; kind[i] = k;
+  nsx[i] = SNX; nsy[i] = SNY;
+}
+function plot(x, y, z, L, m, ch, see, gl, k) { if (project(x, y, z)) put(PX, PY, PZ, L, m, ch, see, gl, k); }
+function slope(vx, vy) {            // a screen direction (y down) -> | / \ -
+  if (vx < 0) { vx = -vx; vy = -vy; }
+  const a = Math.atan2(vy, vx);
+  return a > 1.18 || a < -1.18 ? 124 : a > 0.39 ? 92 : a < -0.39 ? 47 : 45;
+}
+function line(ax, ay, az, bx, by, bz, L, m, see) {
+  if (!project(ax, ay, az)) return;
+  const x0 = PX, y0 = PY, z0 = PZ;
+  if (!project(bx, by, bz)) return;
+  const x1 = PX, y1 = PY, z1 = PZ, ch = slope((x1 - x0) * CW, (y1 - y0) * CH);
+  const n = Math.min(120, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 1.5) + 1);
+  for (let s = 0; s <= n; s++) {
+    const t = s / n;
+    put(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t, L, m, ch, see, 0, LINE);
+  }
+}
+// the glyph a short stroke from p along d makes on screen
+function stroke(x, y, z, dx, dy, dz) {
+  if (!project(x, y, z)) return 45;
+  const ax = PX, ay = PY;
+  if (!project(x + dx * 0.05, y + dy * 0.05, z + dz * 0.05)) return 45;
+  return slope((PX - ax) * CW, (PY - ay) * CH);
+}
+function fresnel(x, y, z, nx, ny, nz) {
+  const vx = CX - x, vy = CY - y, vz = CZ - z;
+  return 1 - Math.abs(nx * vx + ny * vy + nz * vz) / Math.hypot(vx, vy, vz);
+}
+
+// [path]
+// Each animal swims a closed Catmull-Rom curve through its marks,
+// resampled by arc length so speed means speed. The marks above the
+// surface are the dolphins' leaps; sharks get the same laps flattened.
+const ROUTE_A = [[-4.6, -0.55, 0.7], [-2.2, -1.0, 0.95], [0.4, -0.75, 0.55], [2.1, 0.25, 0.25],
+                 [3.35, 2.05, 0.05], [4.55, 0.25, -0.3], [5.1, -0.95, -1.4], [3.6, -1.2, -2.5],
+                 [0.6, -0.6, -2.7], [-2.4, 0.15, -2.4], [-4.7, -0.25, -1.6], [-5.7, -0.6, -0.3]];
+const ROUTE_B = [[4.8, -0.2, -0.9], [2.6, -0.9, 0.9], [0.2, -1.15, 1.6], [-2.4, -0.5, 1.2],
+                 [-4.2, 0.4, -0.2], [-5.4, 1.85, -1.0], [-6.2, 0.1, -1.6], [-5.0, -1.0, -2.9],
+                 [-1.8, -0.4, -3.3], [1.4, 0.3, -2.8], [3.8, -0.6, -2.4]];
+function buildPath(route, level) {
+  if (level) route = route.map(([x, y, z]) => [x, -0.35 + (y + 0.35) * 0.45, z]);   // reef sharks cruise nearly level, no leaps
+  const n = route.length, PN = n * 120, P = new Float32Array(PN * 3), L = new Float32Array(PN + 1);
+  for (let k = 0; k < PN; k++) {
+    const seg = Math.floor(k / 120), t = k / 120 - seg, t2 = t * t, t3 = t2 * t;
+    const p0 = route[(seg - 1 + n) % n], p1 = route[seg], p2 = route[(seg + 1) % n], p3 = route[(seg + 2) % n];
+    for (let c = 0; c < 3; c++) {
+      P[k * 3 + c] = 0.5 * (2 * p1[c] + (p2[c] - p0[c]) * t + (2 * p0[c] - 5 * p1[c] + 4 * p2[c] - p3[c]) * t2 +
+                            (3 * p1[c] - p0[c] - 3 * p2[c] + p3[c]) * t3);
+    }
+  }
+  for (let k = 1; k <= PN; k++) {
+    const a = (k - 1) * 3, b = (k % PN) * 3;
+    L[k] = L[k - 1] + Math.hypot(P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]);
+  }
+  return { P, L, PN, lap: L[PN] };
+}
+let QX = 0, QY = 0, QZ = 0;
+function pathAt(path, d) {
+  const { P, L, PN, lap } = path;
+  d = ((d % lap) + lap) % lap;
+  let lo = 0, hi = PN;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (L[m] <= d) lo = m; else hi = m; }
+  const f = (d - L[lo]) / (L[hi] - L[lo] || 1), a = lo * 3, b = (hi % PN) * 3;
+  QX = P[a] + (P[b] - P[a]) * f; QY = P[a + 1] + (P[b + 1] - P[a + 1]) * f; QZ = P[a + 2] + (P[b + 2] - P[a + 2]) * f;
+}
+
+// [swimmer]
+// What every swimmer shares: its lap, its state, and a spine of SP
+// samples with a frame (forward T, up U, side S) at each. frameAt reads a
+// point and frame anywhere along the body; profile reads the cross-section
+// of whichever animal is being drawn (PROF).
+const BODY = 2.0, SP = 72;
+function makeSwimmer(kind, route, base, start) {
+  const path = buildPath(route, kind.level);
+  return { kind, path, base, d: path.lap * start, speed: base, phase: start * 9, freq: 1, amp: 1, roll: 0,
+           burst: 0, exhale: 0, cx: 0, cy: 0, cz: 0, kx: 1, kz: 0, headY: -9, tailY: -9,
+           BP: new Float32Array(SP * 3), BU: new Float32Array(SP * 3), SPn: new Float32Array(SP * 3),
+           ST: new Float32Array(SP * 3), SU: new Float32Array(SP * 3), SS: new Float32Array(SP * 3) };
+}
+let FPX = 0, FPY = 0, FPZ = 0, FTX = 0, FTY = 0, FTZ = 0, FUX = 0, FUY = 0, FUZ = 0, FSX = 0, FSY = 0, FSZ = 0;
+function frameAt(o, s) {
+  const { SPn, ST, SU, SS } = o;
+  const f = clamp(s, 0, 1) * (SP - 1), i = Math.min(SP - 2, f | 0), u = f - i, a = i * 3, b = a + 3;
+  FPX = SPn[a] + (SPn[b] - SPn[a]) * u; FPY = SPn[a + 1] + (SPn[b + 1] - SPn[a + 1]) * u; FPZ = SPn[a + 2] + (SPn[b + 2] - SPn[a + 2]) * u;
+  FTX = ST[a] + (ST[b] - ST[a]) * u; FTY = ST[a + 1] + (ST[b + 1] - ST[a + 1]) * u; FTZ = ST[a + 2] + (ST[b + 2] - ST[a + 2]) * u;
+  FUX = SU[a] + (SU[b] - SU[a]) * u; FUY = SU[a + 1] + (SU[b + 1] - SU[a + 1]) * u; FUZ = SU[a + 2] + (SU[b + 2] - SU[a + 2]) * u;
+  FSX = SS[a] + (SS[b] - SS[a]) * u; FSY = SS[a + 1] + (SS[b + 1] - SS[a + 1]) * u; FSZ = SS[a + 2] + (SS[b + 2] - SS[a + 2]) * u;
+}
+let PROF = null, PRT = 0, PRB = 0, PRW = 0;
+function profile(s) {
+  const { S, T, B, W } = PROF;
+  s = clamp(s, 0, 1);
+  let k = 0; while (k < S.length - 2 && S[k + 1] < s) k++;
+  const u = (s - S[k]) / (S[k + 1] - S[k]);
+  PRT = T[k] + (T[k + 1] - T[k]) * u; PRB = B[k] + (B[k + 1] - B[k]) * u; PRW = W[k] + (W[k + 1] - W[k]) * u;
+}
+
+// [dolphin]
+// The head runs along the lap and the body is the lap itself, sampled
+// behind the head, so it bends exactly where the head has turned. On top of
+// that a wave runs from mid-body to the flukes: dolphins swim up and down,
+// not side to side. It banks into turns, speeds up before a leap and stops
+// beating its flukes while it is in the air.
+function swimDolphin(o, dt) {
+  const { BP, BU, SPn, ST, SU, SS } = o;
+  pathAt(o.path, o.d + 1.6);
+  const want = o.base + 1.0 * smooth(0.2, 1.6, QY);
+  o.speed += (want - o.speed) * Math.min(1, dt * 1.2);
+  o.d = (o.d + o.speed * dt) % o.path.lap;
+  o.freq = 0.3 + 0.5 * o.speed;
+  o.phase += o.freq * TAU * dt;
+  for (let i = 0; i < SP; i++) {
+    pathAt(o.path, o.d - i / (SP - 1) * BODY);
+    BP[i * 3] = QX; BP[i * 3 + 1] = QY; BP[i * 3 + 2] = QZ;
+  }
+  // bank: compare the heading at the snout with the heading mid-body
+  const ax = BP[0] - BP[24], az = BP[2] - BP[26], bx = BP[48] - BP[72], bz = BP[50] - BP[74];
+  const turn = (ax * bz - az * bx) / (Math.hypot(ax, az) * Math.hypot(bx, bz) + 1e-6);
+  o.roll += (clamp(turn * 2.5, -0.35, 0.35) - o.roll) * Math.min(1, dt * 2);
+  const air = BP[(SP >> 1) * 3 + 1] > SURF;
+  o.amp += ((air ? 0.1 : 1) - o.amp) * Math.min(1, dt * 4);
+  const cr = Math.cos(o.roll), sr = Math.sin(o.roll);
+  for (let i = 0; i < SP; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
+    let tx = BP[a] - BP[b], ty = BP[a + 1] - BP[b + 1], tz = BP[a + 2] - BP[b + 2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    let ux = -tx * ty, uy = 1 - ty * ty, uz = -tz * ty;              // world up, made square to the body
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    const sx = ty * uz - tz * uy, sy = tz * ux - tx * uz, sz = tx * uy - ty * ux;
+    ux = ux * cr + sx * sr; uy = uy * cr + sy * sr; uz = uz * cr + sz * sr;
+    BU[k] = ux; BU[k + 1] = uy; BU[k + 2] = uz;
+    const s = i / (SP - 1);
+    const off = o.amp * (0.09 * smooth(0.3, 1, s) ** 1.3 - 0.012 * (1 - s)) * Math.sin(o.phase - 4.4 * s);
+    SPn[k] = BP[k] + ux * off; SPn[k + 1] = BP[k + 1] + uy * off; SPn[k + 2] = BP[k + 2] + uz * off;
+  }
+  // frames from the final, undulating spine: the flukes pitch with the wave
+  for (let i = 0; i < SP; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
+    let tx = SPn[a] - SPn[b], ty = SPn[a + 1] - SPn[b + 1], tz = SPn[a + 2] - SPn[b + 2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const dp = BU[k] * tx + BU[k + 1] * ty + BU[k + 2] * tz;
+    let ux = BU[k] - tx * dp, uy = BU[k + 1] - ty * dp, uz = BU[k + 2] - tz * dp;
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    ST[k] = tx; ST[k + 1] = ty; ST[k + 2] = tz; SU[k] = ux; SU[k + 1] = uy; SU[k + 2] = uz;
+    SS[k] = ty * uz - tz * uy; SS[k + 1] = tz * ux - tx * uz; SS[k + 2] = tx * uy - ty * ux;
+  }
+  // the camera aims at the path itself, mid-body: steady, no bob
+  const m = (SP * 0.42 | 0) * 3;
+  o.cx = BP[m]; o.cy = BP[m + 1]; o.cz = BP[m + 2];
+  const hx = BP[0] - BP[(SP - 1) * 3], hz = BP[2] - BP[(SP - 1) * 3 + 2], hl = Math.hypot(hx, hz);
+  if (hl > 0.2) { o.kx = hx / hl; o.kz = hz / hl; }
+  // crossing the surface throws spray and drags air down with it
+  const hy = SPn[1], ty = SPn[(SP - 1) * 3 + 1];
+  if (o.headY > -9 && (o.headY < SURF) !== (hy < SURF)) splash(SPn[0], SPn[2], hy > SURF ? 0.8 : 1.3);
+  if (o.tailY > -9 && (o.tailY < SURF) !== (ty < SURF)) splash(SPn[(SP - 1) * 3], SPn[(SP - 1) * 3 + 2], 0.6);
+  o.headY = hy; o.tailY = ty;
+  if (o.exhale > 0) {
+    o.exhale -= dt;
+    frameAt(o, 0.17); profile(0.17);
+    for (let n = 0; n < 2; n++) emit(FPX + FUX * PRT, FPY + FUY * PRT, FPZ + FUZ * PRT, (Math.random() - 0.5) * 0.2, 0.3, (Math.random() - 0.5) * 0.2, 0.2 + Math.random() * 0.8, 6);
+  }
+}
+
+// [dolphin-body]
+// A bottlenose in cross-sections: s runs from the tip of the beak (0) to the
+// tail stock (1). Top and bottom differ: the melon rises steeply behind the
+// short beak, the belly is fuller than the back is tall, and the tail stock
+// is a narrow keel. Heights and widths are fractions of a 2-unit body.
+const DOLPHIN_PROFILE = {
+  S: [0, .02, .05, .08, .10, .12, .15, .20, .27, .35, .45, .55, .65, .75, .85, .93, 1],
+  T: [.006, .014, .020, .026, .040, .070, .100, .128, .150, .163, .165, .150, .118, .080, .048, .032, .024].map(v => v * 1.15),
+  B: [.005, .012, .018, .024, .030, .045, .065, .090, .115, .130, .132, .115, .085, .055, .034, .024, .018].map(v => v * 1.15),
+  W: [.006, .013, .019, .026, .036, .055, .075, .098, .115, .122, .118, .100, .072, .044, .026, .018, .014] };
+// Three colour bands like the real animal: a dark cape along the back that
+// dips lowest under the dorsal fin, grey flanks, a pale belly. Each band is
+// lit brightly enough to be drawn in dense glyphs; the outline pass draws
+// the seams between them. The normal leans forward wherever the body widens
+// behind it, which is what makes the melon catch the light.
+function drawDolphin(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ;                                     // cells per unit at this dolphin
+  if (PX < -ppu * 2 || PX > COLS + ppu * 2) return;          // well off screen
+  const nS = clamp(Math.ceil(BODY * ppu * 2), 40, 700), nT = clamp(Math.ceil(TAU * 0.17 * ppu * 2.2), 20, 260);
+  for (let a = 0; a <= nS; a++) {
+    const s = a / nS;
+    profile(s + 0.004); const t2 = PRT, b2 = PRB, w2 = PRW;
+    profile(s); frameAt(o, s);
+    const dT = (t2 - PRT) / (0.004 * BODY), dB = (b2 - PRB) / (0.004 * BODY), dW = (w2 - PRW) / (0.004 * BODY);
+    const cape = s < 0.1 ? 0.2 : 0.3 + 0.28 * smooth(0.18, 0.45, s) - 0.34 * smooth(0.55, 0.85, s);
+    const belly = -0.3 + 0.22 * smooth(0.62, 0.9, s);
+    for (let b = 0; b < nT; b++) {
+      const th = b / nT * TAU, c = Math.cos(th), sn = Math.sin(th), hv = sn > 0 ? PRT : PRB;
+      const vert = hv * sn, lat = PRW * c;
+      const x = FPX + FUX * vert + FSX * lat, y = FPY + FUY * vert + FSY * lat, z = FPZ + FUZ * vert + FSZ * lat;
+      let nu = sn / hv, ns = c / PRW;
+      const l0 = Math.hypot(nu, ns); nu /= l0; ns /= l0;
+      const na = (sn > 0 ? dT : dB) * Math.abs(sn) + dW * Math.abs(c);
+      let nx = FUX * nu + FSX * ns + FTX * na, ny = FUY * nu + FSY * ns + FTY * na, nz = FUZ * nu + FSZ * ns + FTZ * na;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const m = sn > cape ? 1 : sn < belly ? 3 : 2;
+      const f = fresnel(x, y, z, nx, ny, nz);
+      const L = 0.5 + 0.42 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.08 * Math.max(0, -ny) + 0.1 * f * f;
+      SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+      plot(x, y, z, L, m, 0, 6, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+  drawDolphinFins(o, ppu);
+  // eyes: a dark hole in a bright head reads as an eye
+  frameAt(o, 0.118); profile(0.118);
+  for (const sg of [-1, 1]) {
+    const v = PRT * 0.28, w = PRW * 0.97 * sg;
+    plot(FPX + FUX * v + FSX * w, FPY + FUY * v + FSY * w, FPZ + FUZ * v + FSZ * w, 0.6, 4, 64, 0.05, 0, LINE);
+  }
+}
+
+// [dolphin-fins]
+// Fins are not shaded, they are hatched: every cell gets a stroke that runs
+// the way the fin's rays run on screen. A falcate dorsal fin (straight
+// leading edge, hooked trailing edge), two pectoral flippers that paddle a
+// little, and flukes swept back with a notch in the middle. They pitch with
+// the tail because they hang off the same undulating frame.
+function drawDolphinFins(o, ppu) {
+  const lit = (nx, ny, nz) => Math.abs(nx * LX + ny * LY + nz * LZ);
+  let nv = Math.ceil(0.25 * ppu * 1.6) + 3, na = Math.ceil(0.22 * ppu * 1.6) + 3;
+  for (let i = 0; i <= nv; i++) {
+    const v = i / nv, sf = 0.40 + 0.215 * v ** 1.35, sb = 0.565 + 0.05 * v ** 2.6;
+    frameAt(o, (sf + sb) / 2); profile((sf + sb) / 2);
+    const ch = stroke(FPX + FUX * (PRT + v * 0.25), FPY + FUY * (PRT + v * 0.25), FPZ + FUZ * (PRT + v * 0.25), FUX - FTX * 0.7, FUY - FTY * 0.7, FUZ - FTZ * 0.7);
+    for (let j = 0; j <= na; j++) {
+      const s = sf + (sb - sf) * j / na; frameAt(o, s); profile(s);
+      const h = PRT * 0.92 + v * 0.25;
+      plot(FPX + FUX * h, FPY + FUY * h, FPZ + FUZ * h, 0.38 + 0.4 * lit(FSX, FSY, FSZ) + 0.12 * v, 1, ch, 6, 0.04, SOLID);
+    }
+  }
+  frameAt(o, 0.27); profile(0.27);
+  const T = [FTX, FTY, FTZ], U = [FUX, FUY, FUZ], S = [FSX, FSY, FSZ];
+  const ox0 = FPX - FUX * PRB * 0.55, oy0 = FPY - FUY * PRB * 0.55, oz0 = FPZ - FUZ * PRB * 0.55, rw = PRW;
+  nv = Math.ceil(0.3 * ppu * 1.6) + 3; na = Math.ceil(0.12 * ppu * 1.8) + 3;
+  for (const sg of [-1, 1]) {
+    const beat = 0.12 * Math.sin(o.phase * 0.5 + (sg > 0 ? 0 : 1.2));
+    let dx = -T[0] * 0.72 - U[0] * (0.48 + beat) + S[0] * sg * 0.5, dy = -T[1] * 0.72 - U[1] * (0.48 + beat) + S[1] * sg * 0.5, dz = -T[2] * 0.72 - U[2] * (0.48 + beat) + S[2] * sg * 0.5;
+    const dl = Math.hypot(dx, dy, dz); dx /= dl; dy /= dl; dz /= dl;
+    const dp = T[0] * dx + T[1] * dy + T[2] * dz;
+    let cx = T[0] - dx * dp, cy = T[1] - dy * dp, cz = T[2] - dz * dp;
+    const cl = Math.hypot(cx, cy, cz) || 1; cx /= cl; cy /= cl; cz /= cl;
+    const L = 0.4 + 0.4 * lit(dy * cz - dz * cy, dz * cx - dx * cz, dx * cy - dy * cx);
+    const ox = ox0 + S[0] * sg * rw * 0.75, oy = oy0 + S[1] * sg * rw * 0.75, oz = oz0 + S[2] * sg * rw * 0.75;
+    const ch = stroke(ox, oy, oz, dx, dy, dz);
+    for (let i = 0; i <= nv; i++) {
+      const v = i / nv, len = 0.3 * v, chd = 0.11 * Math.sqrt(Math.max(0, 1 - v * v)) * (1 - 0.3 * v) + 0.008;
+      for (let j = 0; j <= na; j++) {
+        const off = (j / na - 0.35) * chd;
+        plot(ox + dx * len + cx * off, oy + dy * len + cy * off, oz + dz * len + cz * off, L, 2, ch, 6, 0.04, SOLID);
+      }
+    }
+  }
+  frameAt(o, 0.955);
+  const P0 = [FPX, FPY, FPZ], T0 = [FTX, FTY, FTZ], S0 = [FSX, FSY, FSZ], Lf = 0.38 + 0.45 * lit(FUX, FUY, FUZ);
+  nv = Math.ceil(0.31 * ppu * 1.6) + 3; na = Math.ceil(0.17 * ppu * 1.8) + 3;
+  for (const sg of [-1, 1]) {
+    const ch = stroke(P0[0], P0[1], P0[2], S0[0] * sg - T0[0] * 0.5, S0[1] * sg - T0[1] * 0.5, S0[2] * sg - T0[2] * 0.5);
+    for (let i = 0; i <= nv; i++) {
+      const v = i / nv, lead = 0.02 + 0.13 * v ** 1.5, span = 0.02 + v * 0.29;
+      const chd = (0.15 * (1 - v ** 1.8) + 0.018) * (0.78 + 0.22 * smooth(0, 0.18, v));
+      for (let j = 0; j <= na; j++) {
+        const back = lead + chd * j / na;
+        plot(P0[0] - T0[0] * back + S0[0] * sg * span, P0[1] - T0[1] * back + S0[1] * sg * span, P0[2] - T0[2] * back + S0[2] * sg * span, Lf, 1, ch, 6, 0.04, SOLID);
+      }
+    }
+  }
+}
+
+// [shark]
+// The head runs along the lap and the body is the lap itself, sampled
+// behind the head, so it bends exactly where the head has turned. On top of
+// that a wave runs from the head to the tail, side to side: sharks swim by
+// sweeping the tail, the head swings a little the other way. It banks
+// gently into turns. A tap makes it dart: the tail beats harder and faster.
+function swimShark(o, dt) {
+  const { BP, BU, SPn, ST, SU, SS } = o;
+  o.burst *= Math.exp(-dt * 0.8);
+  o.speed += (o.base + 1.8 * o.burst - o.speed) * Math.min(1, dt * 1.5);
+  o.d = (o.d + o.speed * dt) % o.path.lap;
+  o.freq = 0.35 + 0.45 * o.speed;
+  o.amp = 1 + 0.5 * o.burst;
+  o.phase += o.freq * TAU * dt;
+  for (let i = 0; i < SP; i++) {
+    pathAt(o.path, o.d - i / (SP - 1) * BODY);
+    BP[i * 3] = QX; BP[i * 3 + 1] = QY; BP[i * 3 + 2] = QZ;
+  }
+  // bank: compare the heading at the snout with the heading mid-body
+  const ax = BP[0] - BP[24], az = BP[2] - BP[26], bx = BP[48] - BP[72], bz = BP[50] - BP[74];
+  const turn = (ax * bz - az * bx) / (Math.hypot(ax, az) * Math.hypot(bx, bz) + 1e-6);
+  o.roll += (clamp(turn * 2, -0.3, 0.3) - o.roll) * Math.min(1, dt * 2);
+  const cr = Math.cos(o.roll), sr = Math.sin(o.roll);
+  for (let i = 0; i < SP; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
+    let tx = BP[a] - BP[b], ty = BP[a + 1] - BP[b + 1], tz = BP[a + 2] - BP[b + 2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    let ux = -tx * ty, uy = 1 - ty * ty, uz = -tz * ty;              // world up, made square to the body
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    let sx = ty * uz - tz * uy, sy = tz * ux - tx * uz, sz = tx * uy - ty * ux;
+    const rux = ux * cr + sx * sr, ruy = uy * cr + sy * sr, ruz = uz * cr + sz * sr;
+    sx = sx * cr - ux * sr; sy = sy * cr - uy * sr; sz = sz * cr - uz * sr;
+    BU[k] = rux; BU[k + 1] = ruy; BU[k + 2] = ruz;
+    const s = i / (SP - 1);
+    const off = o.amp * (0.12 * smooth(0.2, 1, s) ** 1.5 - 0.018 * (1 - s)) * Math.sin(o.phase - 5.2 * s);
+    SPn[k] = BP[k] + sx * off; SPn[k + 1] = BP[k + 1] + sy * off; SPn[k + 2] = BP[k + 2] + sz * off;
+  }
+  // frames from the final, swaying spine: the tail fin yaws with the wave
+  for (let i = 0; i < SP; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
+    let tx = SPn[a] - SPn[b], ty = SPn[a + 1] - SPn[b + 1], tz = SPn[a + 2] - SPn[b + 2];
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const dp = BU[k] * tx + BU[k + 1] * ty + BU[k + 2] * tz;
+    let ux = BU[k] - tx * dp, uy = BU[k + 1] - ty * dp, uz = BU[k + 2] - tz * dp;
+    const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+    ST[k] = tx; ST[k + 1] = ty; ST[k + 2] = tz; SU[k] = ux; SU[k + 1] = uy; SU[k + 2] = uz;
+    SS[k] = ty * uz - tz * uy; SS[k + 1] = tz * ux - tx * uz; SS[k + 2] = tx * uy - ty * ux;
+  }
+  // the camera aims at the path itself, mid-body: steady, no sway
+  const m = (SP * 0.42 | 0) * 3;
+  o.cx = BP[m]; o.cy = BP[m + 1]; o.cz = BP[m + 2];
+  const hx = BP[0] - BP[(SP - 1) * 3], hz = BP[2] - BP[(SP - 1) * 3 + 2], hl = Math.hypot(hx, hz);
+  if (hl > 0.2) { o.kx = hx / hl; o.kz = hz / hl; }
+}
+
+// [shark-body]
+// A reef shark in cross-sections: s runs from the tip of the snout (0) to
+// the tail stock (1). A pointed, slightly flattened snout, a deep chest
+// behind the gills, then a long taper to a narrow tail stock. Heights and
+// widths are fractions of a 2-unit body.
+const SHARK_PROFILE = {
+  S: [0, .02, .05, .09, .14, .20, .28, .36, .45, .55, .65, .75, .84, .92, 1],
+  T: [.005, .026, .046, .066, .086, .106, .124, .134, .134, .12, .098, .07, .046, .032, .026],
+  B: [.003, .016, .032, .05, .074, .098, .114, .122, .12, .106, .086, .062, .04, .028, .022],
+  W: [.005, .03, .055, .076, .094, .108, .118, .12, .114, .1, .08, .058, .038, .026, .02] };
+// Countershading with a hard edge, as on a real reef shark: bronze-grey
+// above, white below, and a pale flank mark that runs back into the dark
+// above the pelvic fins. The outline pass draws the seam between them.
+function drawShark(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ;                                     // cells per unit at this shark
+  if (PX < -ppu * 2 || PX > COLS + ppu * 2) return;          // well off screen
+  const nS = clamp(Math.ceil(BODY * ppu * 2), 40, 800), nT = clamp(Math.ceil(TAU * 0.15 * ppu * 2.2), 20, 280);
+  for (let a = 0; a <= nS; a++) {
+    const s = a / nS;
+    profile(s + 0.004); const t2 = PRT, b2 = PRB, w2 = PRW;
+    profile(s); frameAt(o, s);
+    const dT = (t2 - PRT) / (0.004 * BODY), dB = (b2 - PRB) / (0.004 * BODY), dW = (w2 - PRW) / (0.004 * BODY);
+    const line0 = -0.12 + 0.06 * Math.sin(s * 9), mark = smooth(0.5, 0.58, s) * (1 - smooth(0.7, 0.8, s));
+    for (let b = 0; b < nT; b++) {
+      const th = b / nT * TAU, c = Math.cos(th), sn = Math.sin(th), hv = sn > 0 ? PRT : PRB;
+      const vert = hv * sn, lat = PRW * c;
+      const x = FPX + FUX * vert + FSX * lat, y = FPY + FUY * vert + FSY * lat, z = FPZ + FUZ * vert + FSZ * lat;
+      let nu = sn / hv, ns = c / PRW;
+      const l0 = Math.hypot(nu, ns); nu /= l0; ns /= l0;
+      const na = (sn > 0 ? dT : dB) * Math.abs(sn) + dW * Math.abs(c);
+      let nx = FUX * nu + FSX * ns + FTX * na, ny = FUY * nu + FSY * ns + FTY * na, nz = FUZ * nu + FSZ * ns + FTZ * na;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const m = sn < line0 ? 3 : sn < line0 + 0.3 * mark ? 2 : 1;
+      const f = fresnel(x, y, z, nx, ny, nz);
+      const L = 0.5 + 0.42 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.08 * Math.max(0, -ny) + 0.1 * f * f;
+      SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+      plot(x, y, z, L, m, 0, 6, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+  drawSharkFins(o, ppu);
+  // eye, and five gill slits on each side when close enough to see them
+  frameAt(o, 0.085); profile(0.085);
+  for (const sg of [-1, 1]) {
+    const v = PRT * 0.3, w = PRW * 0.97 * sg;
+    plot(FPX + FUX * v + FSX * w, FPY + FUY * v + FSY * w, FPZ + FUZ * v + FSZ * w, 0.6, 4, 64, 0.05, 0, LINE);
+  }
+  if (ppu > 22) {
+    for (let g = 0; g < 5; g++) {
+      const s = 0.2 + g * 0.017; frameAt(o, s); profile(s);
+      const h = 0.75 - g * 0.06;
+      for (const sg of [-1, 1]) {
+        const w = PRW * 0.98 * sg, a0 = -PRB * 0.25 * h, a1 = PRT * 0.55 * h;
+        line(FPX + FUX * a0 + FSX * w, FPY + FUY * a0 + FSY * w, FPZ + FUZ * a0 + FSZ * w,
+             FPX + FUX * a1 + FSX * w, FPY + FUY * a1 + FSY * w, FPZ + FUZ * a1 + FSZ * w, 0.55, 11, 0.05);
+      }
+    }
+  }
+}
+
+// [shark-fins]
+// Fins are not shaded, they are hatched: every cell gets a stroke that runs
+// the way the fin points on screen. A tall triangular first dorsal fin,
+// wing-like pectorals, small pelvic, second dorsal and anal fins, and the
+// tail: upright, the upper lobe longer than the lower. Tips are black, as
+// on a blacktip reef shark. All of them hang off the swaying frame, so the
+// tail fin swings with the wave.
+// sheet(o, s, side, up, back, len, chord, ...) sweeps a fin out from a root
+// on the body: along dir for its length, with a chord that narrows to a tip.
+function sheet(o, s, rootUp, rootSide, du, ds, dt, len, chord0, tipAt, m, ppu) {
+  frameAt(o, s); profile(s);
+  const ru = rootUp > 0 ? PRT * rootUp : PRB * rootUp, rs = PRW * rootSide;
+  const ox = FPX + FUX * ru + FSX * rs, oy = FPY + FUY * ru + FSY * rs, oz = FPZ + FUZ * ru + FSZ * rs;
+  let dx = FUX * du + FSX * ds - FTX * dt, dy = FUY * du + FSY * ds - FTY * dt, dz = FUZ * du + FSZ * ds - FTZ * dt;
+  const dl = Math.hypot(dx, dy, dz) || 1; dx /= dl; dy /= dl; dz /= dl;
+  const dp = FTX * dx + FTY * dy + FTZ * dz;                 // chord runs back along the body
+  let cx = -(FTX - dx * dp), cy = -(FTY - dy * dp), cz = -(FTZ - dz * dp);
+  const cl = Math.hypot(cx, cy, cz) || 1; cx /= cl; cy /= cl; cz /= cl;
+  const nx = dy * cz - dz * cy, ny = dz * cx - dx * cz, nz = dx * cy - dy * cx;
+  const L = 0.4 + 0.42 * Math.abs(nx * LX + ny * LY + nz * LZ);
+  const ch = stroke(ox, oy, oz, dx, dy, dz);
+  const nv = Math.ceil(len * ppu * 1.6) + 3, na = Math.ceil(chord0 * ppu * 1.8) + 3;
+  for (let i = 0; i <= nv; i++) {
+    const v = i / nv, c = chord0 * (1 - v) ** 0.85 + 0.006, sweep = chord0 * 0.55 * v * v;
+    const mm = v > tipAt ? 11 : m;
+    for (let j = 0; j <= na; j++) {
+      const a = j / na * c + sweep;
+      plot(ox + dx * len * v + cx * a, oy + dy * len * v + cy * a, oz + dz * len * v + cz * a, mm === 11 ? 0.7 : L, mm, ch, 6, 0.04, SOLID);
+    }
+  }
+}
+function drawSharkFins(o, ppu) {
+  const flap = 0.08 * Math.sin(o.phase * 0.5);
+  sheet(o, 0.34, 0.9, 0, 1, 0, 0.32, 0.3, 0.16, 0.82, 1, ppu);              // first dorsal
+  sheet(o, 0.74, 0.9, 0, 1, 0, 0.35, 0.08, 0.07, 0.7, 1, ppu);              // second dorsal
+  sheet(o, 0.75, -0.9, 0, -1, 0, 0.3, 0.07, 0.06, 2, 1, ppu);               // anal
+  for (const sg of [-1, 1]) {
+    sheet(o, 0.25, -0.6, 0.7 * sg, -0.45 + flap, 0.75 * sg, 0.55, 0.36, 0.17, 0.85, 1, ppu);   // pectorals
+    sheet(o, 0.58, -0.8, 0.5 * sg, -0.6, 0.45 * sg, 0.5, 0.11, 0.07, 2, 1, ppu);              // pelvics
+  }
+  sheet(o, 0.97, 0.5, 0, 1, 0, 1.05, 0.46, 0.17, 0.85, 1, ppu);             // tail, upper lobe
+  sheet(o, 0.97, -0.5, 0, -1, 0, 0.75, 0.28, 0.13, 0.7, 1, ppu);            // tail, lower lobe
+}
+
+// [species]
+// The two animals the page can show. Each brings its own way of swimming,
+// its own body and fins, its own colours for the three body bands, and what
+// a tap does. Switching rebuilds the swimmers and the palette.
+const SPECIES = {
+  dolphin: { swim: swimDolphin, draw: drawDolphin, prof: DOLPHIN_PROFILE, level: false,
+             routes: [[ROUTE_A, 1.45, 0.12], [ROUTE_B, 1.3, 0.55]], rate: 'fluke', tag: 'tursiops · 02', tap: 'tap for bubbles',
+             bands: [[[40, 62, 92], [120, 166, 222], [214, 236, 255]],      // cape
+                     [[64, 72, 84], [178, 192, 210], [240, 246, 252]],      // flank
+                     [[70, 70, 76], [214, 216, 222], [255, 252, 244]]],     // belly
+             poke: o => { o.exhale = 1.4; } },
+  shark: { swim: swimShark, draw: drawShark, prof: SHARK_PROFILE, level: true,
+           routes: [[ROUTE_A, 1.25, 0.12], [ROUTE_B, 1.1, 0.55]], rate: 'tail', tag: 'carcharhinus · 01', tap: 'tap to make it dart',
+           bands: [[[58, 54, 48], [158, 150, 136], [232, 226, 212]],        // bronze-grey back
+                   [[80, 80, 80], [206, 206, 204], [250, 250, 248]],        // flank mark
+                   [[84, 84, 86], [226, 228, 230], [255, 255, 255]]],       // belly
+           poke: o => { o.burst = 1; } } };
+let animals = [], current = '';
+function setSpecies(name) {
+  const k = SPECIES[name] || SPECIES.dolphin;
+  current = SPECIES[name] ? name : 'dolphin';
+  animals = k.routes.map(([r, base, start]) => makeSwimmer(k, r, base, start));
+  for (let i = 0; i < 3; i++) STOPS[i + 1] = k.bands[i];
+  buildColors();
+  for (let i = 0; i < 60; i++) for (const o of animals) { PROF = k.prof; k.swim(o, 1 / 60); }
+  cam.ready = false;
+  document.getElementById('rate').textContent = k.rate;
+  document.getElementById('tag').textContent = k.tag;
+  document.getElementById('hint').textContent = 'drag to orbit · ' + k.tap;
+  document.querySelectorAll('[data-sp]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.sp === current)));
+  try { localStorage.setItem('reef.species', current); } catch (e) {}
+}
+
+// [seabed]
+// The sand is a sparse field of dots, brighter where caustics gather and
+// darker under each shark's soft shadow. The surface overhead is a
+// sparse field of ripples. Neither fills the screen: open water stays black.
+function drawSeabed(t) {
+  const st = 0.17, x0 = Math.floor((TX - 7) / st) * st, z0 = Math.floor((TZ - 7) / st) * st;
+  const sh = animals.map(o => {
+    const h = Math.max(0.1, o.cy - FLOOR);
+    return [o.cx - LX / LY * h, o.cz - LZ / LY * h, o.kx, o.kz, 0.5 + h * 0.35];
+  });
+  for (let a = 0; a < 83; a++) {
+    const x = x0 + a * st;
+    for (let b = 0; b < 83; b++) {
+      const z = z0 + b * st;
+      let c = (Math.sin(x * 3.1 + t * 0.8 + Math.sin(z * 2.3 + t * 0.45)) + Math.sin(z * 3.6 - t * 0.6 + Math.sin(x * 2.2 - t * 0.35))) * 0.25 + 0.5;
+      c *= c; c *= c;
+      let shade = 1;
+      for (const [sx, sz, kx, kz, bl] of sh) {
+        const qx = x - sx, qz = z - sz, al = qx * kx + qz * kz, ac = qz * kx - qx * kz;
+        shade *= 1 - 0.7 * Math.exp(-(al * al / (0.6 * bl) + ac * ac / (0.06 * bl)));
+      }
+      const L = (0.16 + 0.6 * c) * shade, y = FLOOR + 0.05 * Math.sin(0.9 * x + 0.4 * Math.sin(0.7 * z));
+      plot(x, y, z, L, 5, c > 0.4 ? 58 : 46, 0, 0, GROUND);
+    }
+  }
+  const sw = 0.24, u0 = Math.floor((TX - 7) / sw) * sw, w0 = Math.floor((TZ - 7) / sw) * sw;
+  for (let a = 0; a < 59; a++) {
+    const x = u0 + a * sw;
+    for (let b = 0; b < 59; b++) {
+      const z = w0 + b * sw;
+      let sp = 0.5 + 0.5 * Math.sin(x * 1.7 + t * 1.1 + Math.sin(z * 2.3 - t * 0.9 + x * 0.6) + 0.5 * Math.sin((x - z) * 4.1 + t * 1.9));
+      sp = sp * sp * sp;
+      plot(x, SURF + 0.04 * Math.sin(x * 1.3 + t), z, 0.1 + 0.5 * sp, 6, sp > 0.45 ? 126 : 45, 0, 6, CEIL);
+    }
+  }
+}
+
+// [reef]
+// Boulders, and seagrass drawn as tubes, so each blade gets an outline and
+// a dense core instead of a single thin line. The blades lean with the
+// swell and part when a shark passes. A few starfish.
+const rocks = [], grass = [], stars = [];
+{
+  const R = rng(5);
+  for (let i = 0; i < 9; i++) rocks.push({ x: -6.5 + i * 1.6 + (R() - 0.5) * 0.8, z: -3.4 + R() * 4.4, r: 0.22 + R() * 0.42, f: 0.5 + R() * 0.3, seed: R() * 10 });
+  for (let i = 0; i < 40; i++) {
+    const k = rocks[i % rocks.length], a = R() * TAU, d = k.r + 0.1 + R() * 0.9;
+    grass.push({ x: k.x + Math.cos(a) * d, z: k.z + Math.sin(a) * d, h: 0.35 + R() * 0.75, az: R() * TAU, ph: R() * TAU, lean: (R() - 0.5) * 0.4 });
+  }
+  for (let i = 0; i < 8; i++) stars.push({ x: -6 + R() * 12, z: -3 + R() * 4 });
+}
+function drawRocks() {
+  for (const k of rocks) {
+    const h = k.r * k.f;
+    if (!project(k.x, FLOOR + h * 0.5, k.z)) continue;
+    const ppu = FOC / PZ, nA = clamp(Math.ceil(k.r * ppu * 1.1), 5, 40), nP = clamp(Math.ceil(TAU * k.r * ppu * 1.3), 12, 160);
+    for (let i = 0; i <= nA; i++) {
+      const a = i / nA * Math.PI * 0.52;
+      for (let j = 0; j < nP; j++) {
+        const p = j / nP * TAU;
+        const bump = 1 + 0.16 * Math.sin(3 * p + k.seed + 2 * a) * Math.sin(4 * a + 2 * p + k.seed) + 0.05 * Math.sin(11 * p + 7 * a);
+        const rho = k.r * Math.sin(a) * bump, y = h * Math.cos(a) * bump;
+        let nx = Math.cos(p) * Math.sin(a) / k.r, ny = Math.cos(a) / h, nz = Math.sin(p) * Math.sin(a) / k.r;
+        const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+        const x = k.x + Math.cos(p) * rho, z = k.z + Math.sin(p) * rho, yy = FLOOR - 0.04 + y;
+        SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+        plot(x, yy, z, 0.12 + 0.5 * Math.max(0, nx * LX + ny * LY + nz * LZ), 7, 0, 0, 0, SOLID);
+      }
+    }
+  }
+  SNX = SNY = 0;
+}
+function drawGrass(t) {
+  const pts = new Float32Array(9 * 3);
+  for (const g of grass) {
+    if (!project(g.x, FLOOR + g.h * 0.5, g.z)) continue;
+    const ppu = FOC / PZ;
+    let push = 0;
+    for (const o of animals) {
+      const dd = Math.hypot(g.x - o.cx, FLOOR + 0.4 - o.cy, g.z - o.cz);
+      if (dd < 1.4) push += (1.4 - dd) * 0.8 * Math.sign(g.x - o.cx || 1);
+    }
+    const ca = Math.cos(g.az), sa = Math.sin(g.az);
+    pts[0] = g.x; pts[1] = FLOOR; pts[2] = g.z;
+    for (let k = 1; k < 9; k++) {
+      const s = k / 8, seg = g.h / 8;
+      const ang = (g.lean + 0.25 * Math.sin(t * 0.9 + g.x * 0.6 + g.ph) + push) * s + 0.1 * Math.sin(t * 2.1 + g.ph + s * 3) * s * s;
+      const j = k * 3;
+      pts[j] = pts[j - 3] + Math.sin(ang) * ca * seg; pts[j + 1] = pts[j - 2] + Math.cos(ang) * seg; pts[j + 2] = pts[j - 1] + Math.sin(ang) * sa * seg;
+    }
+    const nP = clamp(Math.ceil(TAU * 0.05 * ppu * 2), 8, 24);
+    for (let k = 0; k < 8; k++) {
+      const j = k * 3;
+      let tx = pts[j + 3] - pts[j], ty = pts[j + 4] - pts[j + 1], tz = pts[j + 5] - pts[j + 2];
+      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      let ex = ty, ey = -tx, ez = 0;                               // t x (0,0,1)
+      if (Math.hypot(ex, ey) < 0.2) { ex = 0; ey = tz; ez = -ty; }   // t x (1,0,0)
+      const el = Math.hypot(ex, ey, ez); ex /= el; ey /= el; ez /= el;
+      const fx = ty * ez - tz * ey, fy = tz * ex - tx * ez, fz = tx * ey - ty * ex;
+      for (let u = 0; u < 3; u++) {
+        const s = (k + u / 3) / 8, r = 0.05 * (1 - 0.55 * s) + 0.008;
+        const cx = pts[j] + (pts[j + 3] - pts[j]) * u / 3, cy = pts[j + 1] + (pts[j + 4] - pts[j + 1]) * u / 3, cz = pts[j + 2] + (pts[j + 5] - pts[j + 2]) * u / 3;
+        for (let m = 0; m < nP; m++) {
+          const a = m / nP * TAU, co = Math.cos(a), si = Math.sin(a);
+          const nx = ex * co + fx * si, ny = ey * co + fy * si, nz = ez * co + fz * si;
+          SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+          plot(cx + nx * r, cy + ny * r, cz + nz * r, 0.22 + 0.45 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.15 * s, 8, 0, 0, 0, SOLID);
+        }
+      }
+    }
+  }
+  SNX = SNY = 0;
+  for (const s of stars) plot(s.x, FLOOR + 0.02, s.z, 0.8, 12, 42, 0, 0, LINE);
+}
+
+// [school]
+// Forty-eight small fish hold loose stations around a drifting centre and
+// scatter when a shark comes through. Each is drawn the old way: ><>
+const FISH = 48, fp = new Float32Array(FISH * 3), fv = new Float32Array(FISH * 3), fo = new Float32Array(FISH * 3);
+{
+  const R = rng(17);
+  for (let i = 0; i < FISH * 3; i += 3) {
+    fo[i] = (R() - 0.5) * 1.3; fo[i + 1] = (R() - 0.5) * 0.5; fo[i + 2] = (R() - 0.5) * 1.0;
+    fp[i] = -1.4 + fo[i]; fp[i + 1] = -0.75 + fo[i + 1]; fp[i + 2] = -1.3 + fo[i + 2];
+  }
+}
+function school(dt) {
+  const w = 0.06, cx = -1.4 + 2.4 * Math.sin(TIME * w), cy = -0.75 + 0.3 * Math.sin(TIME * 0.13), cz = -1.3 + 0.9 * Math.cos(TIME * w);
+  const vx = 2.4 * w * Math.cos(TIME * w), vz = -0.9 * w * Math.sin(TIME * w);
+  for (let i = 0; i < FISH * 3; i += 3) {
+    let ax = (cx + fo[i] - fp[i]) * 1.1 + (vx - fv[i]) * 0.8;
+    let ay = (cy + fo[i + 1] - fp[i + 1]) * 1.1 - fv[i + 1] * 0.8;
+    let az = (cz + fo[i + 2] - fp[i + 2]) * 1.1 + (vz - fv[i + 2]) * 0.8;
+    for (const o of animals) {
+      const dx = fp[i] - o.cx, dy = fp[i + 1] - o.cy, dz = fp[i + 2] - o.cz, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 2.2) { const k = (2.2 - d2) * 5 / Math.sqrt(d2 + 0.01); ax += dx * k; ay += dy * k * 0.5; az += dz * k; }
+    }
+    fv[i] += ax * dt; fv[i + 1] += ay * dt; fv[i + 2] += az * dt;
+    const sp = Math.hypot(fv[i], fv[i + 1], fv[i + 2]);
+    if (sp > 1.8) { fv[i] *= 1.8 / sp; fv[i + 1] *= 1.8 / sp; fv[i + 2] *= 1.8 / sp; }
+    fp[i] += fv[i] * dt; fp[i + 1] = clamp(fp[i + 1] + fv[i + 1] * dt, FLOOR + 0.2, SURF - 0.2); fp[i + 2] += fv[i + 2] * dt;
+  }
+}
+function drawFish() {
+  for (let i = 0; i < FISH * 3; i += 3) {
+    if (!project(fp[i] - fv[i] * 0.1, fp[i + 1] - fv[i + 1] * 0.1, fp[i + 2] - fv[i + 2] * 0.1)) continue;
+    const tx = PX;
+    if (!project(fp[i], fp[i + 1], fp[i + 2])) continue;
+    const right = PX >= tx, L = 0.55 + 0.3 * Math.sin(TIME * 3 + i);
+    if (PZ > 6.5) { put(PX, PY, PZ, L, 9, right ? 62 : 60, 0, 0, LINE); continue; }
+    const g = right ? [62, 60, 62] : [60, 62, 60], x0 = right ? PX - 2 : PX;
+    for (let k = 0; k < 3; k++) put(x0 + k, PY, PZ, L, 9, g[k], 0, 0, LINE);
+  }
+}
+
+// [bubbles]
+// One pool for bubbles and spray. Bubbles rise, wobble and pop at the
+// surface; spray is thrown up, falls back and is gone when it lands.
+const BUB = 500, bp = new Float32Array(BUB * 3), bv = new Float32Array(BUB * 3), blife = new Float32Array(BUB), bsize = new Float32Array(BUB);
+let bnext = 0;
+function emit(x, y, z, vx, vy, vz, size, life) {
+  const i = bnext, k = i * 3; bnext = (bnext + 1) % BUB;
+  bp[k] = x; bp[k + 1] = y; bp[k + 2] = z; bv[k] = vx; bv[k + 1] = vy; bv[k + 2] = vz; bsize[i] = size; blife[i] = life;
+}
+function splash(x, z, power) {
+  const r = Math.random;
+  for (let n = 0; n < 70 * power; n++) emit(x + (r() - 0.5) * 0.3, SURF + 0.01, z + (r() - 0.5) * 0.3, (r() - 0.5) * 1.6, 1 + 2.4 * r() * power, (r() - 0.5) * 1.6, 0, 2);
+  for (let n = 0; n < 60 * power; n++) emit(x + (r() - 0.5) * 0.4, SURF - 0.05 - r() * 0.6 * power, z + (r() - 0.5) * 0.4, (r() - 0.5) * 0.4, -0.3 * r(), (r() - 0.5) * 0.4, 0.15 + 0.85 * r(), 5);
+}
+function bubbles(dt) {
+  for (let i = 0; i < BUB; i++) {
+    if (blife[i] <= 0) continue;
+    const k = i * 3; blife[i] -= dt;
+    if (bsize[i] === 0) {
+      bv[k + 1] -= 4.5 * dt;
+      if (bp[k + 1] < SURF) blife[i] = 0;
+    } else {
+      bv[k + 1] += (0.45 + 0.4 * bsize[i] - bv[k + 1]) * dt * 2;
+      bv[k] *= Math.exp(-2 * dt); bv[k + 2] *= Math.exp(-2 * dt);
+      bp[k] += 0.08 * Math.sin(TIME * 6 + i) * dt;
+      if (bp[k + 1] > SURF - 0.03) blife[i] = 0;
+    }
+    bp[k] += bv[k] * dt; bp[k + 1] += bv[k + 1] * dt; bp[k + 2] += bv[k + 2] * dt;
+  }
+}
+function drawBubbles() {
+  for (let i = 0; i < BUB; i++) {
+    if (blife[i] <= 0) continue;
+    const k = i * 3, s = bsize[i];
+    if (s === 0) plot(bp[k], bp[k + 1], bp[k + 2], 0.8, 10, bv[k + 1] > 0 ? 39 : 46, 6, 0, LINE);
+    else plot(bp[k], bp[k + 1], bp[k + 2], 0.5 + 0.4 * s, 10, s > 0.7 ? 79 : s > 0.35 ? 111 : 46, 0, 0, LINE);
+  }
+}
+
+// [snow]
+// Marine snow: slanted streaks sinking through the dark, a few specks
+// that glint. It fills open water only; it never covers an animal.
+const SNOWN = REDUCED ? 90 : 220, snow = new Float32Array(SNOWN * 4);
+{
+  const R = rng(23);
+  for (let i = 0; i < SNOWN * 4; i += 4) { snow[i] = (R() - 0.5) * 12; snow[i + 1] = FLOOR + R() * (SURF - FLOOR); snow[i + 2] = -3.5 + R() * 5; snow[i + 3] = R(); }
+}
+function driftSnow(dt) {
+  for (let i = 0; i < SNOWN * 4; i += 4) {
+    snow[i] += 0.05 * dt; snow[i + 1] -= (0.04 + 0.05 * snow[i + 3]) * dt;
+    if (snow[i + 1] < FLOOR) snow[i + 1] = SURF;
+  }
+}
+function drawSnow(t) {
+  for (let i = 0; i < SNOWN * 4; i += 4) {
+    let x = snow[i] - TX; x = TX + ((((x + 6) % 12) + 12) % 12) - 6;
+    let z = snow[i + 2] - TZ; z = TZ + ((((z + 3) % 6) + 6) % 6) - 3;
+    if (!project(x, snow[i + 1], z)) continue;
+    const ix = PX | 0, iy = PY | 0;
+    if (PX < 0 || PY < 0 || ix >= COLS || iy >= ROWS || kind[iy * COLS + ix]) continue;
+    const r = snow[i + 3];
+    if (r < 0.72) put(PX, PY, PZ, 0.22 + 0.12 * r, 13, 47, 0, 0, MOTE);
+    else if (r < 0.93) put(PX, PY, PZ, 0.3, 13, 46, 0, 0, MOTE);
+    else put(PX, PY, PZ, 0.35 + 0.35 * Math.sin(t * 2 + i), 13, r > 0.97 ? 42 : 43, 0, 0, MOTE);
+  }
+}
+
+// [outline]
+// Two kinds of line. A solid cell next to open water, or next to something
+// much farther away, is on a silhouette: its glyph runs square to the
+// surface normal as seen on screen (thin fins, which have no useful normal
+// there, read the edge from their neighbours). And where the dark back
+// meets the pale flank or belly, the paler side draws the seam.
+function solidAt(j, lim) { const k = kind[j]; return (k === SOLID || k === EDGE) && depth[j] < lim; }
+function edgeGlyph(l, r, u, d) {
+  const gx = r - l, gy = d - u;
+  if (!gx && !gy) return l && r ? 45 : u && d ? 124 : 0;
+  if (!gy) return 124;
+  if (!gx) return gy > 0 ? 45 : 95;
+  return gx * gy > 0 ? 47 : 92;
+}
+function outline() {
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x;
+    if (kind[i] !== SOLID) continue;
+    const lim = depth[i] + 0.25;
+    const l = x > 0 && solidAt(i - 1, lim) ? 1 : 0, r = x < COLS - 1 && solidAt(i + 1, lim) ? 1 : 0;
+    const u = y > 0 && solidAt(i - COLS, lim) ? 1 : 0, d = y < ROWS - 1 && solidAt(i + COLS, lim) ? 1 : 0;
+    if (l && r && u && d) {
+      const m = mat[i];
+      if ((m !== 2 && m !== 3) || chr[i]) continue;
+      const lo = j => (mat[j] < m && mat[j] >= 1 ? 0 : 1);      // 0 where the darker band is
+      const a = lo(i - 1), b = lo(i + 1), c = lo(i - COLS), e = lo(i + COLS);
+      if (a && b && c && e) continue;
+      const g = edgeGlyph(a, b, c, e);
+      if (g) { chr[i] = g; kind[i] = EDGE; lum[i] *= 0.9; }
+      continue;
+    }
+    const sx = nsx[i], sy = nsy[i];
+    let ch;
+    if (sx * sx + sy * sy > 0.12) ch = sy > 0.75 ? 95 : slope(-sy, sx);
+    else { ch = edgeGlyph(l, r, u, d); if (!ch) continue; }
+    chr[i] = ch; kind[i] = EDGE; lum[i] = Math.min(1, lum[i] * 1.1 + 0.08);
+  }
+}
+
+// [palette]
+// Every material fades dark -> mid -> bright. The sea is pure black and
+// everything but the animals is kept dim and muted, so they stand out.
+// Distance dims things towards black, which is all the fog it needs. Brightness also picks the
+// glyph: the animals sit high on the ramp, in the dense letters.
+const LV = 14;
+const RAMP = '.:-=+*o08%$QB&@';
+const STOPS = [null,
+  [[58, 54, 48], [158, 150, 136], [232, 226, 212]],   // 1 back: bronze-grey
+  [[80, 80, 80], [206, 206, 204], [250, 250, 248]],   // 2 flank mark
+  [[84, 84, 86], [226, 228, 230], [255, 255, 255]],   // 3 belly
+  [[2, 4, 8], [6, 10, 16], [14, 20, 28]],             // 4 eye
+  [[20, 18, 15], [78, 72, 60], [140, 130, 108]],      // 5 sand
+  [[14, 20, 26], [60, 78, 92], [130, 150, 164]],      // 6 surface
+  [[22, 20, 20], [78, 70, 64], [140, 128, 114]],      // 7 rock
+  [[14, 28, 18], [56, 104, 60], [120, 168, 100]],     // 8 seagrass
+  [[46, 54, 66], [180, 190, 200], [255, 236, 190]],   // 9 fish
+  [[40, 72, 92], [152, 212, 232], [242, 252, 255]],   // 10 bubbles, spray
+  [[20, 20, 22], [62, 62, 66], [104, 104, 110]],      // 11 black fin tips, gills
+  [[70, 26, 14], [236, 110, 52], [255, 198, 128]],    // 12 starfish
+  [[22, 24, 28], [60, 64, 72], [110, 116, 126]]];     // 13 marine snow
+const COLORS = [], GLYPH = [];
+function buildColors() {
+  COLORS.length = 0;
+  for (let m = 0; m < STOPS.length; m++) for (let l = 0; l < LV; l++) {
+  if (!STOPS[m]) { COLORS.push('#000'); continue; }
+  const t = (l + 0.5) / LV, A = t < 0.5 ? STOPS[m][0] : STOPS[m][1], B = t < 0.5 ? STOPS[m][1] : STOPS[m][2], u = t < 0.5 ? t * 2 : t * 2 - 1;
+  COLORS.push(`rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * u)).join(',')})`);
+  }
+}
+for (let c = 0; c < 128; c++) GLYPH.push(String.fromCharCode(c));
+const counts = new Int32Array(STOPS.length * LV + 1);
+
+// [compose]
+let drawn = 0;
+function compose() {
+  const n = COLS * ROWS, near = cam.dist + 0.8;
+  counts.fill(0); drawn = 0;
+  for (let i = 0; i < n; i++) {
+    if (!mat[i]) { bucket[i] = -1; continue; }
+    const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3) : lum[i];
+    if (vis < 0.05) { bucket[i] = -1; continue; }
+    lum[i] = vis;
+    const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
+    bucket[i] = b; counts[b + 1]++; drawn++;
+  }
+  for (let b = 1; b < counts.length; b++) counts[b] += counts[b - 1];
+  const fill = counts.slice();
+  for (let i = 0; i < n; i++) if (bucket[i] >= 0) order[fill[bucket[i]]++] = i;
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.clearRect(0, 0, txt.width, txt.height);
+  tctx.font = Math.round(FONT * DPR) + 'px ' + MONO; tctx.textBaseline = 'top';
+  for (let b = 0; b < counts.length - 1; b++) {
+    if (counts[b] === counts[b + 1]) continue;
+    tctx.fillStyle = COLORS[b];
+    for (let o = counts[b]; o < counts[b + 1]; o++) {
+      const i = order[o], g = chr[i];
+      tctx.fillText(g ? GLYPH[g] : RAMP[Math.min(14, (lum[i] * 15) | 0)], OX + (i % COLS) * CW, OY + ((i / COLS) | 0) * CH);
+    }
+  }
+}
+function present() {
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.globalCompositeOperation = 'source-over'; vctx.globalAlpha = 1;
+  const g = vctx.createLinearGradient(0, 0, 0, view.height);
+  g.addColorStop(0, '#000000'); g.addColorStop(1, '#000000');
+  vctx.fillStyle = g; vctx.fillRect(0, 0, view.width, view.height);
+  bctx.clearRect(0, 0, bloom.width, bloom.height); bctx.drawImage(txt, 0, 0, bloom.width, bloom.height);
+  vctx.imageSmoothingEnabled = true; vctx.globalCompositeOperation = 'lighter'; vctx.globalAlpha = 0.45;
+  vctx.drawImage(bloom, 0, 0, view.width, view.height);
+  vctx.globalAlpha = 1; vctx.globalCompositeOperation = 'source-over';
+  vctx.drawImage(txt, 0, 0);
+}
+
+// [loop]
+// Motion uses the real frame time (capped), so it is as smooth as the
+// display allows.
+function step(dt) { TIME += dt; for (const o of animals) { PROF = o.kind.prof; o.kind.swim(o, dt); } school(dt); bubbles(dt); driftSnow(dt); }
+function render(dt) {
+  setCamera(dt);
+  depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
+  drawSeabed(TIME); drawRocks(); drawGrass(TIME); drawFish();
+  for (const o of animals) { PROF = o.kind.prof; o.kind.draw(o); }
+  drawBubbles(); drawSnow(TIME);
+  outline(); compose(); present();
+}
+resize();
+new ResizeObserver(resize).observe(stage);
+if (document.fonts) document.fonts.ready.then(resize);
+{
+  let saved = null; try { saved = localStorage.getItem('reef.species'); } catch (e) {}
+  setSpecies(saved || 'dolphin');
+}
+const hud = { spd: document.getElementById('spd'), hz: document.getElementById('hz'), dep: document.getElementById('dep'), chars: document.getElementById('chars') };
+let last = performance.now(), frame = 0;
+function tick(now) {
+  const dt = Math.min(0.05, (now - last) / 1000) * (REDUCED ? 0.6 : 1); last = now;
+  if (!paused) step(dt);
+  render(paused ? 0 : dt);
+  if (frame++ % 6 === 0) {
+    const A = animals[0];
+    hud.spd.textContent = (A.speed * METRES).toFixed(1);
+    hud.hz.textContent = (A.freq * A.amp).toFixed(1);
+    hud.dep.textContent = A.cy > SURF ? 'airborne' : ((SURF - A.cy) * METRES).toFixed(1) + ' m';
+    hud.chars.textContent = drawn;
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// [input]
+// Drag to orbit round the animal (it stays centred); a tap makes the
+// dolphin blow bubbles or the shark dart. The bar along the bottom picks
+// the animal and the detail: finer detail means smaller cells, so more of
+// them, and every surface is sampled more densely to fill them.
+let grab = null;
+stage.addEventListener('pointerdown', e => { grab = { x: e.clientX, y: e.clientY, moved: 0 }; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove', e => {
+  if (!grab) return;
+  const dx = e.clientX - grab.x, dy = e.clientY - grab.y;
+  grab.moved += Math.abs(dx) + Math.abs(dy); grab.x = e.clientX; grab.y = e.clientY;
+  cam.dyaw -= dx * 0.006; cam.dpitch = clamp(cam.dpitch + dy * 0.004, -1.0, 1.0);
+});
+stage.addEventListener('pointerup', () => { if (grab && grab.moved < 6) animals[0].kind.poke(animals[0]); grab = null; });
+stage.addEventListener('pointercancel', () => { grab = null; });
+stage.addEventListener('keydown', e => {
+  if (e.target !== stage) return;
+  if (e.key === 'ArrowLeft') cam.dyaw += 0.1; else if (e.key === 'ArrowRight') cam.dyaw -= 0.1;
+  else if (e.key === 'ArrowUp') cam.dpitch = clamp(cam.dpitch + 0.06, -1.0, 1.0);
+  else if (e.key === 'ArrowDown') cam.dpitch = clamp(cam.dpitch - 0.06, -1.0, 1.0);
+  else if (e.key === ' ') animals[0].kind.poke(animals[0]); else return;
+  e.preventDefault();
+});
+window.scene = { setPaused(v) { paused = v; } };
+const detail = document.getElementById('detail');
+for (const b of document.querySelectorAll('[data-sp]')) b.addEventListener('click', () => setSpecies(b.dataset.sp));
+try { const v = +localStorage.getItem('reef.detail'); if (v >= 1 && v <= 10) { DETAIL = v; resize(); } } catch (e) {}
+detail.value = DETAIL || 16 - FONT;
+detail.addEventListener('input', () => {
+  DETAIL = +detail.value; resize();
+  try { localStorage.setItem('reef.detail', String(DETAIL)); } catch (e) {}
+});
+document.getElementById('ctrl').addEventListener('pointerdown', e => e.stopPropagation());
+</script>
+
+<script>
+// Source panel: shows the scene script above, one section at a time.
+(() => {
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const src = document.getElementById('scene').textContent.replace(/^\s*\n/, '').replace(/\s+$/, '');
+  const lines = src.split('\n');
+  const code = document.getElementById('code'), chips = document.getElementById('chips'), bar = document.getElementById('bar');
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const TOK = /\b(const|let|function|return|for|if|else|while|of|new|true|false|null|continue)\b|(\b\d+(?:\.\d+)?\b)/g;
+  const paint = l => {
+    const c = l.indexOf('//'), body = c < 0 ? l : l.slice(0, c), note = c < 0 ? '' : l.slice(c);
+    return esc(body).replace(TOK, (m, k, n) => k ? `<span class="k">${k}</span>` : `<span class="n">${n}</span>`) +
+      (note ? `<span class="c">${esc(note)}</span>` : '');
+  };
+  const rows = lines.map((l, i) => {
+    const d = document.createElement('div');
+    d.className = 'ln';
+    d.innerHTML = `<span class="no">${i + 1}</span><span>${paint(l) || ' '}</span>`;
+    code.appendChild(d);
+    return d;
+  });
+  const secs = [];
+  lines.forEach((l, i) => { const m = l.match(/^\/\/ \[([\w-]+)\]/); if (m) secs.push({ name: m[1], at: i }); });
+  secs.forEach((s, i) => {
+    s.end = i + 1 < secs.length ? secs[i + 1].at : lines.length;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = s.name; b.setAttribute('role', 'tab');
+    b.addEventListener('click', () => show(i, true));
+    chips.appendChild(b); s.btn = b;
+  });
+  const DWELL = 9;
+  let cur = -1, since = 0, hold = 0;
+  function show(i, byHand) {
+    if (cur >= 0) { const o = secs[cur]; o.btn.classList.remove('on'); o.btn.setAttribute('aria-selected', 'false'); for (let r = o.at; r < o.end; r++) rows[r].classList.remove('on'); }
+    cur = i; since = 0; if (byHand) hold = 25;
+    const s = secs[i];
+    s.btn.classList.add('on'); s.btn.setAttribute('aria-selected', 'true');
+    for (let r = s.at; r < s.end; r++) rows[r].classList.add('on');
+    code.scrollTo({ top: rows[s.at].offsetTop - 4, behavior: REDUCED ? 'auto' : 'smooth' });
+    chips.scrollTo({ left: s.btn.offsetLeft - chips.offsetLeft - 24, behavior: REDUCED ? 'auto' : 'smooth' });
+  }
+  const holdOn = () => { hold = 25; };
+  code.addEventListener('wheel', holdOn, { passive: true });
+  code.addEventListener('touchstart', holdOn, { passive: true });
+  let last = performance.now();
+  (function tick(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (hold > 0) hold -= dt; else if ((since += dt) > DWELL) show((cur + 1) % secs.length);
+    bar.style.width = ((cur + Math.min(1, since / DWELL)) / secs.length * 100) + '%';
+    requestAnimationFrame(tick);
+  })(last);
+  show(Math.max(0, secs.findIndex(s => s.name === 'swimmer')));
+
+  const panel = document.getElementById('panel'), showBtn = document.getElementById('showSrc');
+  document.getElementById('hideSrc').addEventListener('click', () => { panel.hidden = true; showBtn.hidden = false; showBtn.focus(); });
+  showBtn.addEventListener('click', () => { panel.hidden = false; showBtn.hidden = true; });
+  showBtn.addEventListener('pointerdown', e => e.stopPropagation());
+  const pauseBtn = document.getElementById('pause');
+  pauseBtn.addEventListener('click', () => {
+    const p = pauseBtn.textContent === 'Pause';
+    window.scene.setPaused(p); pauseBtn.textContent = p ? 'Play' : 'Pause';
+  });
+})();
+</script>
