@@ -172,7 +172,7 @@ function resize() {
   W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, window.devicePixelRatio || 1);
   view.width = txt.width = Math.round(W * DPR); view.height = txt.height = Math.round(H * DPR);
   bloom.width = Math.max(1, Math.round(W / 4)); bloom.height = Math.max(1, Math.round(H / 4));
-  FONT = 15 * Math.pow(0.2, (DETAIL - 1) / 19);   // the Detail slider sets the cell size: 15px coarse, 3px super fine
+  FONT = 15 * Math.pow(0.4, (DETAIL - 1) / 19);   // the Detail slider sets the cell size: 15px coarse, 6px fine
   tctx.font = Math.round(FONT * DPR) + 'px ' + MONO;
   CW = Math.max(2, Math.round(tctx.measureText('M').width)); CH = Math.round(FONT * DPR * 1.25);
   COLS = Math.max(1, Math.floor(view.width / CW)); ROWS = Math.max(1, Math.floor(view.height / CH));
@@ -2182,7 +2182,7 @@ function compose() {
     if (!mat[i]) { bucket[i] = -1; continue; }
     const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3) : lum[i];
     if (vis < 0.05) { bucket[i] = -1; continue; }
-    lum[i] = ENV.cast && kind[i] !== GROUND ? Math.min(1, vis * 1.3 + 0.1) : vis;
+    lum[i] = ENV.cast && kind[i] !== GROUND ? Math.min(1, vis * 1.35 + 0.22) : vis;
     const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
     bucket[i] = b; counts[b + 1]++; drawn++;
   }
@@ -2195,10 +2195,10 @@ function compose() {
     const n2 = COLS * ROWS, lv = 6;
     for (let l = 0; l < lv; l++) {
       const k = 0.15 + 0.85 * l / (lv - 1);
-      tctx.fillStyle = `rgb(${Math.round(100 * k)},${Math.round(85 * k)},${Math.round(60 * k)})`;
+      tctx.fillStyle = `rgb(${Math.round(112 * k)},${Math.round(98 * k)},${Math.round(72 * k)})`;
       for (let i = 0; i < n2; i++) {
         const g = kind[i] === GROUND || (kind[i] === 0 && sandLum[i] > 0);
-        const L = g ? sandLum[i] : sandLum[i] * 0.55;
+        const L = g ? sandLum[i] : sandLum[i] * 0.14;   // dark shade under every coral, so it stands off the sand
         if (!sandLum[i] || Math.min(lv - 1, (L * lv) | 0) !== l) continue;
         tctx.fillRect(OX + (i % COLS) * CW, OY + ((i / COLS) | 0) * CH, CW, CH);
       }
@@ -2318,7 +2318,7 @@ const SCENES = {
       ENV = { rocks: makeRocks(5, 8), tufts: [], meadow: makeMeadow(900, 9, -8, 8, -4, 2.5, 0.35, 0.85), corals: [], shoals: [silver(18, [-1.4, -0.5, -1.3])], stars: makeStars(5, 10) };
       HUNT.prey = null; HUNT.wait = 4;
     } },
-  reef: { rate: 'drift', tag: 'coral triangle', tap: 'drag to look around', view: { dist: 6, half: 1.6, side: 3.0, pitch: 1.0 }, bands: DOLPHIN_BANDS,
+  reef: { rate: 'drift', tag: 'coral triangle', tap: 'drag to look around', view: { dist: 4.2, half: 1.05, side: 1.9, pitch: 0.95 }, bands: DOLPHIN_BANDS,
     build() {
       const { corals, bommies } = makeReefscape(12), R = rng(91);
       animals = [makeSwimmer(KINDS.glide, { route: REEF_ROUTE, base: 0.55, start: 0 }),
