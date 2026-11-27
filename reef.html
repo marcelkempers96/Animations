@@ -126,7 +126,7 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
       </div>
       <div class="row">
         <span class="hint" id="hint">drag to look around</span>
-        <label class="detail" for="detail">detail <input type="range" id="detail" min="1" max="20" step="1" value="10"></label>
+        <label class="detail" for="detail">detail <input type="range" id="detail" min="1" max="20" step="1" value="15"></label>
         <button class="tool" id="showSrc" type="button" aria-label="Show code">&lt;/&gt;</button>
         <button class="tool" id="full" type="button">Full screen</button>
       </div>
@@ -198,7 +198,7 @@ let SCX = 0, SCY = 0, SCZ = 0, SCK = 1;   // while an animal is drawn: grow it a
 let W = 1, H = 1, DPR = 1, FONT = 12, CW = 7, CH = 15, COLS = 1, ROWS = 1, OX = 0, OY = 0;
 let depth, lum, mat, chr, glass, kind, nsx, nsy, bucket, order;
 const SOLID = 1, LINE = 2, GROUND = 3, CEIL = 4, MOTE = 5, EDGE = 6;
-let SNX = 0, SNY = 0, DETAIL = 10;
+let SNX = 0, SNY = 0, DETAIL = 15;   // opens at 75% of the detail range
 function resize() {
   const r = stage.getBoundingClientRect();
   W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, window.devicePixelRatio || 1);
@@ -2569,7 +2569,7 @@ const SCENES = {
       M.n = keep.length;
       ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
-  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
+  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
       animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0 })];
@@ -2606,6 +2606,9 @@ function setScene(name) {
   blife.fill(0);
   for (let i = 0; i < 60; i++) for (const o of animals) { PROF = o.kind.prof; o.kind.swim(o, 1 / 60); }
   cam.ready = false; cam.dyaw = 0; cam.dpitch = 0;
+  TUNE.size = S.size || 1;                                   // each scene opens at its own animal size
+  const sizeKnob = document.getElementById('tune-size');
+  if (sizeKnob) { sizeKnob.value = TUNE.size; sizeKnob.dispatchEvent(new Event('input')); }
   if (typeof depth !== 'undefined' && depth) resize();
   document.getElementById('rate').textContent = S.rate;
   document.getElementById('tag').textContent = S.tag;
@@ -2787,6 +2790,7 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
     const row = document.createElement('label'); row.className = 'knob';
     row.innerHTML = `<span>${name}</span><b></b><input type="range" id="tune-${key}" min="${min}" max="${max}" step="${stepv}" value="${def}">`;
     const input = row.querySelector('input'), out = row.querySelector('b');
+    input.value = TUNE[key];                                  // start from what the scene set
     const apply = () => {
       const v = +input.value; TUNE[key] = v; out.textContent = fmt(v);
       if (key === 'light') setLight(v);
@@ -2794,9 +2798,9 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
     };
     input.addEventListener('input', apply); apply();
     grid.appendChild(row);
-    return [input, def, apply];
+    return [input, def, apply, key];
   });
-  document.getElementById('tuneReset').addEventListener('click', () => { for (const [input, def, apply] of inputs) { input.value = def; apply(); } });
+  document.getElementById('tuneReset').addEventListener('click', () => { for (const [input, def, apply, key] of inputs) { input.value = key === 'size' ? (SCENES[current].size || 1) : def; apply(); } });
   const pauseBtn = document.getElementById('pause');
   pauseBtn.addEventListener('click', () => {
     const p = pauseBtn.textContent === 'Pause';
