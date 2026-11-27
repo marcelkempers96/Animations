@@ -277,7 +277,7 @@ const ROUTE_POD = [[-11, -0.4, -5.2], [-4, -0.7, -5.4], [3, -0.3, -5.0], [11, -0
 // a slow oval round its anemone, dipping into the tentacles once a lap
 // a small loop through its anemone, at the height of the tentacle tips;
 // once a lap it pushes deep into the arms
-const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [0.7 * Math.cos(a), -0.6 + 0.08 * Math.sin(2 * a) - (i === 7 ? 0.12 : 0), -0.55 + 0.3 * Math.sin(a)]; });
+const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [0.65 * Math.cos(a), -0.72 + 0.1 * Math.sin(2 * a), -0.5 + 0.3 * Math.sin(a)]; });
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
 // the reef camera drifts in a wide loop over the whole reef, looking down
@@ -1157,7 +1157,7 @@ function drawAnemones(t, dt) {
       const sl = Math.sin(a.lat), cl = Math.cos(a.lat);
       let px = A.x + Math.cos(a.lon) * sl * A.r, py = BY + A.h * (0.6 + 0.4 * cl), pz = A.z + Math.sin(a.lon) * sl * A.r;
       let dx = Math.cos(a.lon) * (0.35 + sl) * 0.95, dy = 1.1, dz = Math.sin(a.lon) * (0.35 + sl) * 0.4;
-      const N = 10, seg = a.len / N;
+      const N = 14, seg = a.len / N;
       let tx = 0, ty = 0, tz = 0, touched = 0;
       for (let j = 1; j <= N; j++) {
         const s = j / N;
@@ -1169,9 +1169,9 @@ function drawAnemones(t, dt) {
         let nx = px + dx * seg + a.bx * bend / N * 3, ny = py + dy * seg + a.by * bend / N * 3, nz = pz + dz * seg + a.bz * bend / N * 3;
         // the fish: an ellipsoid the arm may not enter
         for (const F of fl) {
-          const ex = nx - F.cx, ey = ny - F.cy, ez = nz - F.cz, sc = F.scale || 1, ed = Math.hypot(ex * 0.75, ey * 1.7, ez * 1.7) / sc;
-          if (ed < 0.36 && ed > 1e-4) {
-            const f = (0.36 - ed) / ed;
+          const ex = nx - F.cx, ey = ny - F.cy, ez = nz - F.cz, sc = F.scale || 1, ed = Math.hypot(ex * 0.72, ey * 1.55, ez * 1.55) / sc;
+          if (ed < 0.44 && ed > 1e-4) {
+            const f = (0.44 - ed) / ed;
             nx += ex * f * 0.9; ny += ey * f * 0.9; nz += ez * f * 0.9;
             tx += ex * f; ty += ey * f; tz += ez * f; touched = 1;
           }
@@ -1182,7 +1182,7 @@ function drawAnemones(t, dt) {
         px = nx; py = ny; pz = nz;
       }
       // remember the push, so the arm springs back late; remember the touch, so it curls in
-      a.bx += (tx - a.bx) * k; a.by += (ty - a.by) * k * 0.6; a.bz += (tz - a.bz) * k;
+      a.bx += (tx * 1.3 - a.bx) * k; a.by += (ty - a.by) * k * 0.6; a.bz += (tz * 1.3 - a.bz) * k;
       a.touch += (touched - a.touch) * k * 0.5;
     }
   }
@@ -2499,8 +2499,8 @@ const SCENES = {
       animals[1].scale = 0.85;
       const R = rng(42), pinks = [];
       for (let i = 0; i < 3; i++) { const c = makeColony('dendro', -1.9 + R() * 0.6, FLOOR, -1.2 + R() * 0.5, R, a => a[0]); c.m = 80; for (const t of c.tips) { t[0] *= 0.5; t[1] *= 0.5; t[2] *= 0.5; t[3] *= 0.5; } pinks.push(c); }
-      ENV = { rocks: [], tufts: [], meadow: null, corals: pinks, shoals: [], stars: [], sandMat: 13, sandStep: 0.09, sandGain: 0.75, floorGlyph: 58, streaks: true, glow: 0.8,
-              anems: [makeAnemone(0.1, -1.1, 28, 11, 1.7), makeAnemone(1.9, -1.4, 18, 12, 1.4), makeAnemone(-1.9, -1.5, 18, 13, 1.4), makeAnemone(0.9, -2.6, 14, 14, 1.3), makeAnemone(-1.1, -2.7, 14, 15, 1.3)] };
+      ENV = { rocks: [], tufts: [], meadow: null, corals: pinks, shoals: [], stars: [], sandMat: 13, sandStep: 0.09, sandGain: 0.75, floorGlyph: 58, streaks: true, glow: 0.8, noSurface: true,
+              anems: [makeAnemone(0.1, -1.1, 22, 11, 1.7), makeAnemone(2.0, -1.5, 12, 12, 1.4), makeAnemone(-2.0, -1.6, 12, 13, 1.4), makeAnemone(0.9, -2.8, 10, 14, 1.3), makeAnemone(-1.1, -2.9, 10, 15, 1.3)] };
       for (const A of ENV.anems) A.fishes = animals;
     } },
   turtle: { rate: 'stroke', tag: 'chelonia mydas', tap: 'tap: an extra stroke', view: { yaw: -Math.PI / 2 + 0.22, half: 0.85, side: 1.45, pitch: 0.85 }, bands: DOLPHIN_BANDS,
