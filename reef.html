@@ -105,6 +105,7 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
     <div class="bar" id="ctrl">
       <div class="seg" role="group" aria-label="Scene">
         <button type="button" data-sc="reef" aria-pressed="true">Reef</button>
+        <button type="button" data-sc="clown" aria-pressed="false">Clownfish</button>
         <button type="button" data-sc="dolphins" aria-pressed="false">Dolphins</button>
         <button type="button" data-sc="shark" aria-pressed="false">Shark</button>
         <button type="button" data-sc="turtle" aria-pressed="false">Turtle</button>
@@ -271,6 +272,8 @@ const ROUTE_B = [[4.8, -0.2, -0.9], [2.6, -0.9, 0.9], [0.2, -1.15, 1.6], [-2.4, 
                  [-4.2, 0.4, -0.2], [-5.4, 1.85, -1.0], [-6.2, 0.1, -1.6], [-5.0, -1.0, -2.9],
                  [-1.8, -0.4, -3.3], [1.4, 0.3, -2.8], [3.8, -0.6, -2.4]];
 const ROUTE_POD = [[-11, -0.4, -5.2], [-4, -0.7, -5.4], [3, -0.3, -5.0], [11, -0.5, -5.3], [17, -0.4, -12], [9, -0.4, -21], [-9, -0.4, -21], [-17, -0.4, -12]];
+// a slow oval round its anemone, dipping into the tentacles once a lap
+const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [1.6 * Math.cos(a), -0.35 + 0.12 * Math.sin(2 * a) - (i === 7 ? 0.25 : 0), -0.3 + 1.05 * Math.sin(a)]; });
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
 // the reef camera runs along one side of the coral ridge and back down
@@ -976,6 +979,174 @@ function drawPrey() {
   for (let k = 0; k < 7; k++) put(x0 + k, PY, PZ - 0.01, 0.85, 31, g.charCodeAt(k), 0, 0, LINE);
 }
 
+// [clownfish]
+// A clownfish, one unit long, hovering in and out of its anemone. Bright
+// orange, three white bands each edged in black, fins with black margins.
+// It swims with its pectoral fins like oars and steers with a short,
+// quick tail; the tail beat bends the back of the body side to side.
+// Local units: forward x (snout at +0.5), up y, side z.
+const CLOWN_S = [0, .03, .08, .16, .30, .45, .60, .75, .88, 1];
+const CLOWN_H = [0, .072, .12, .17, .215, .23, .21, .16, .105, .08];
+function clownH(s) {
+  s = clamp(s, 0, 1);
+  let k = 0; while (k < CLOWN_S.length - 2 && CLOWN_S[k + 1] < s) k++;
+  const u = (s - CLOWN_S[k]) / (CLOWN_S[k + 1] - CLOWN_S[k]);
+  return CLOWN_H[k] + (CLOWN_H[k + 1] - CLOWN_H[k]) * u;
+}
+const clownW = s => clownH(s) * (0.6 - 0.2 * s);
+function swimClown(o, dt) {
+  o.burst *= Math.exp(-dt * 1.2);
+  o.freq = 1.3 + 1.6 * o.burst; o.amp = 1;
+  o.phase += TAU * o.freq * dt;
+  o.speed += (o.base * (0.8 + 0.25 * Math.sin(TIME * 0.7)) + 1.2 * o.burst - o.speed) * Math.min(1, dt * 2);
+  ride(o, dt, 0.4);
+  o.cy += 0.02 * Math.sin(TIME * 1.1);
+}
+// sideways bend of the body at s, and the body's local z there
+const wag = (o, s) => (0.07 + 0.05 * o.burst) * Math.sin(o.phase - 3.2 * s) * s * s - 0.012 * Math.sin(o.phase) * (1 - s);
+// Which colour a point of the skin is: a band is white, its edges black.
+function clownMat(s, v) {
+  const bands = [[0.215 - 0.035 * v * v, 0.05], [0.5 - 0.05 * (1 - v * v), 0.06], [0.86, 0.035]];
+  for (const [c, w] of bands) {
+    const d = Math.abs(s - c);
+    if (d < w) return 52;
+    if (d < w + 0.022) return 53;
+  }
+  return 51;
+}
+function hatchFin(o, ppu, pts, mat, ch) {     // pts(i, j) -> [x, y, z, edge] in local units
+  for (const p of pts) {
+    toWorld(o, p[0], p[1], p[2]);
+    plot(WX, WY, WZ, p[3] ? 0.5 : 0.55 + 0.35 * p[4], p[3] ? 53 : mat, p[3] ? 0 : ch, 0, 0.04, SOLID);
+  }
+}
+function drawClown(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ;
+  const nS = clamp(Math.ceil(ppu * 1.9), 40, 500), nT = clamp(Math.ceil(TAU * 0.2 * ppu * 2.2), 24, 320);
+  // body
+  for (let a = 0; a <= nS; a++) {
+    const s = a / nS, h = clownH(s), w = clownW(s), dh = (clownH(s + 0.01) - h) / 0.01, zw = wag(o, s);
+    for (let b = 0; b < nT; b++) {
+      const th = b / nT * TAU, sn = Math.sin(th), cs = Math.cos(th);
+      const lx = 0.5 - s, ly = h * sn - 0.02 * (1 - s), lz = w * cs + zw;
+      normalWorld(o, -dh * 0.6, sn / Math.max(h, 0.02), cs / Math.max(w, 0.02));
+      toWorld(o, lx, ly, lz);
+      const f = fresnel(WX, WY, WZ, NX, NY, NZ), m = clownMat(s, sn);
+      screenNormal();
+      plot(WX, WY, WZ, m === 53 ? 0.35 + 0.3 * shade() : 0.56 + 0.42 * shade() + 0.06 * f * f, m, 0, 0, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+  // eyes: a black pupil in a dark ring, a small highlight
+  for (const sg of [-1, 1]) {
+    const s = 0.11, h = clownH(s), w = clownW(s);
+    const n = clamp(Math.ceil(0.04 * ppu * 2.5), 3, 30);
+    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+      const u = i / n * 0.04, v = j / n * 0.04, r = Math.hypot(u, v);
+      if (r > 0.04) continue;
+      toWorld(o, 0.5 - s + u, 0.035 + v, (w * 0.98 + 0.008) * sg + wag(o, s));
+      plot(WX, WY, WZ, r < 0.01 ? 0.9 : 0.25, r < 0.01 ? 52 : 53, r < 0.01 ? 111 : 0, 0.05, 0, LINE);
+    }
+  }
+  const pts = [], pv = (x, y, z, e, l) => pts.push([x, y, z, e, l]);
+  // dorsal fin: a spiny front half, a notch, a taller soft back half; rays upright
+  const nd = clamp(Math.ceil(0.5 * ppu * 1.8), 12, 200), nh = clamp(Math.ceil(0.2 * ppu * 1.8), 4, 90);
+  for (let i = 0; i <= nd; i++) {
+    const s = 0.24 + 0.52 * i / nd, t = i / nd;
+    const fh = t < 0.45 ? 0.12 * Math.sin(t / 0.45 * Math.PI * 0.9 + 0.2) + 0.02 : 0.19 * Math.sin((t - 0.4) / 0.6 * Math.PI) + 0.03;
+    for (let j = 0; j <= nh; j++) {
+      const v = j / nh, y = clownH(s) * 0.96 + v * fh;
+      pv(0.5 - s - 0.04 * v, y - 0.02 * (1 - s), wag(o, s), v > 0.88 || i === 0 || i === nd, 1 - v * 0.4);
+    }
+  }
+  hatchFin(o, ppu, pts.splice(0), 51, 124);
+  // anal fin and pelvic fins, below
+  for (let i = 0; i <= nd / 2; i++) {
+    const s = 0.6 + 0.2 * i / (nd / 2), t = i / (nd / 2), fh = 0.12 * Math.sin(t * Math.PI) + 0.01;
+    for (let j = 0; j <= nh; j++) { const v = j / nh; pv(0.5 - s - 0.05 * v, -clownH(s) * 0.95 - v * fh - 0.02, wag(o, s), v > 0.82, 0.7); }
+  }
+  for (const sg of [-1, 1]) for (let i = 0; i <= nh; i++) for (let j = 0; j <= nh / 2; j++) {
+    const v = i / nh, u = j / (nh / 2);
+    pv(0.5 - 0.3 - 0.12 * v - 0.04 * u, -clownH(0.3) * 0.9 - 0.1 * v, sg * (0.03 + 0.05 * u) + wag(o, 0.3), v > 0.85, 0.6);
+  }
+  hatchFin(o, ppu, pts.splice(0), 51, 92);
+  // tail fin: a rounded fan of rays that swings with the tail
+  const sw = Math.atan(3.2 * (0.07 + 0.05 * o.burst) * Math.cos(o.phase - 3.2)) * 1.2;
+  const nr = clamp(Math.ceil(0.3 * ppu * 1.8), 6, 120), na = clamp(Math.ceil(0.5 * ppu * 1.8), 8, 160);
+  const zt = wag(o, 1);
+  for (let j = 0; j <= na; j++) {
+    const a = (j / na * 2 - 1) * 0.95, R = 0.27 * (1 - 0.12 * a * a);
+    toWorld(o, -0.5, 0, zt); const ax = WX, ay = WY, az = WZ;
+    toWorld(o, -0.5 - Math.cos(a) * 0.1 * Math.cos(sw), Math.sin(a) * 0.1, zt - Math.cos(a) * 0.1 * Math.sin(sw));
+    const ch = (() => { if (!project(ax, ay, az)) return 45; const x0 = PX, y0 = PY; if (!project(WX, WY, WZ)) return 45; return slope((PX - x0) * CW, (PY - y0) * CH); })();
+    for (let i = 0; i <= nr; i++) {
+      const r = 0.03 + R * i / nr, d = r * Math.cos(a);
+      toWorld(o, -0.5 - d * Math.cos(sw), Math.sin(a) * r * 1.1, zt - d * Math.sin(sw));
+      const edge = i / nr > 0.84 || Math.abs(a) > 0.9;
+      plot(WX, WY, WZ, edge ? 0.5 : 0.62 + 0.3 * (1 - i / nr), edge ? 53 : 51, edge ? 0 : ch, 0, 0.04, SOLID);
+    }
+  }
+  // pectoral fins: rowing, the stroke running from the leading ray back
+  for (const sg of [-1, 1]) {
+    const beat = o.phase * 0.9 + (sg > 0 ? 0 : 2.2);
+    const open = 0.75 + 0.45 * Math.sin(beat);
+    const s0 = 0.3, x0 = 0.5 - s0, y0 = -0.06, z0 = sg * clownW(s0) * 0.9 + wag(o, s0);
+    for (let j = 0; j <= na / 2; j++) {
+      const a = (j / (na / 2)) * 1.1 - 0.55, dirx = -Math.cos(open), dirz = sg * Math.sin(open);
+      for (let i = 0; i <= nr / 1.5; i++) {
+        const r = 0.02 + 0.17 * i / (nr / 1.5) * (1 - 0.25 * a * a);
+        const edge = i / (nr / 1.5) > 0.85;
+        toWorld(o, x0 + dirx * r * Math.cos(a), y0 + r * Math.sin(a) * 0.9, z0 + dirz * r * Math.cos(a));
+        plot(WX, WY, WZ, edge ? 0.5 : 0.65, edge ? 53 : 51, edge ? 0 : 92, 0, 0.04, SOLID);
+      }
+    }
+  }
+}
+
+// [anemone]
+// A magnificent sea anemone: a squat column on the sand and dozens of
+// long, fat tentacles with rounded tips, lavender-white, swaying in the
+// surge. No tentacle passes through the fish: near it they bend away, so
+// the fish seems to nestle in them.
+function makeAnemone(x, z, n, seed, scale) {
+  const R = rng(seed), arms = [];
+  for (let i = 0; i < n; i++) {
+    const lon = R() * TAU, lat = 0.06 + 1.1 * R() ** 1.15;
+    arms.push({ lon, lat, len: (0.6 + 0.42 * R()) * scale, ph: R() * TAU, curl: (R() - 0.5) * 0.8 });
+  }
+  return { x, z, r: 0.42 * scale, h: 0.22 * scale, arms };
+}
+function drawAnemones(t) {
+  const fish = animals[0], fx = fish.cx, fy = fish.cy, fz = fish.cz;
+  for (const A of ENV.anems || []) {
+    if (Math.abs(A.x - TX) > 7 || !project(A.x, FLOOR + A.h, A.z)) continue;
+    const ppu = FOC / PZ;
+    tube(A.x, FLOOR, A.z, A.x, FLOOR + A.h * 0.8, A.z, A.r * 0.55, A.r * 0.85, 0.15, 54, ppu);
+    for (const a of A.arms) {
+      const sl = Math.sin(a.lat), cl = Math.cos(a.lat);
+      let px = A.x + Math.cos(a.lon) * sl * A.r, py = FLOOR + A.h * (0.6 + 0.4 * cl), pz = A.z + Math.sin(a.lon) * sl * A.r;
+      let dx = Math.cos(a.lon) * sl * 0.9, dy = 0.55 + cl * 0.6, dz = Math.sin(a.lon) * sl * 0.9;
+      const N = 9, seg = a.len / N;
+      for (let k = 1; k <= N; k++) {
+        const s = k / N;
+        dx += (0.18 * Math.sin(t * 0.9 + a.ph + s * 2.2) + 0.06 * Math.sin(t * 0.37 + A.x)) * s + a.curl * 0.05;
+        dz += 0.12 * Math.sin(t * 0.7 + a.ph * 1.3 + s * 1.7) * s;
+        dy -= 0.06 * s;
+        const l = Math.hypot(dx, dy, dz); dx /= l; dy /= l; dz /= l;
+        let nx = px + dx * seg, ny = py + dy * seg, nz = pz + dz * seg;
+        const ex = nx - fx, ey = ny - fy, ez = nz - fz, ed = Math.hypot(ex * 0.8, ey * 1.6, ez * 1.6);
+        if (ed < 0.42 && ed > 1e-4) { const f = (0.42 - ed) / ed * 0.9; nx += ex * f; ny += ey * f; nz += ez * f; }
+        if (ny < FLOOR + 0.03) ny = FLOOR + 0.03;
+        const r0 = 0.036 * (1 - 0.3 * (s - 1 / N)), r1 = k === N ? 0.032 : 0.036 * (1 - 0.3 * s);
+        tube(px, py, pz, nx, ny, nz, r0, r1, 0.3 + 0.2 * s, 54, ppu);
+        px = nx; py = ny; pz = nz;
+      }
+    }
+  }
+  SNX = SNY = 0;
+}
+
 // [seabed]
 // Beige sand, rippled by the swell: the ripple crests catch the light and
 // the caustics slide over them, darker under each animal's soft shadow.
@@ -1010,7 +1181,7 @@ function drawSeabed(t) {
       }
       const rip = Math.sin(x * 9 + 2 * Math.sin(z * 1.3) + 0.6 * Math.sin(z * 4.1));
       const L = (0.2 + 0.12 * rip + 0.5 * c) * shade * gain, y = FLOOR + 0.05 * Math.sin(0.9 * x + 0.4 * Math.sin(0.7 * z)) + 0.008 * rip;
-      plot(x, y, z, L, 5, rip > 0.55 ? 58 : rip > -0.2 ? 46 : 44, 0, 0, GROUND);
+      plot(x, y, z, L, ENV.sandMat || 5, ENV.sandMat ? 46 : rip > 0.55 ? 58 : rip > -0.2 ? 46 : 44, 0, 0, GROUND);
     }
   }
   SNX = SNY = 0;
@@ -1593,7 +1764,11 @@ const STOPS = [null,
   [[52, 52, 48], [172, 170, 158], [242, 240, 230]],   // 47 giant clam shell
   [[72, 62, 10], [248, 224, 52], [255, 250, 184]],    // 48 feather star
   [[44, 32, 36], [150, 104, 112], [222, 184, 188]],   // 49 coralline algae
-  [[62, 38, 12], [204, 144, 54], [252, 214, 134]]];   // 50 turtle shell: amber rays
+  [[62, 38, 12], [204, 144, 54], [252, 214, 134]],    // 50 turtle shell: amber rays
+  [[120, 34, 4], [255, 122, 22], [255, 196, 92]],     // 51 clownfish orange
+  [[150, 146, 140], [250, 248, 240], [255, 255, 255]], // 52 clownfish white
+  [[18, 10, 30], [62, 44, 88], [110, 92, 140]],       // 53 clownfish black edges
+  [[54, 50, 68], [188, 184, 210], [246, 244, 255]]];  // 54 anemone: lavender white
 const COLORS = [], GLYPH = [];
 function buildColors() {
   COLORS.length = 0;
@@ -1706,11 +1881,13 @@ function drawShoals() {
 //   Reef      no star: the camera drifts along a colourful coral reef.
 //   Turtle    a big green turtle flying slowly over a seagrass garden.
 //   Manta     a manta ray banking over a coral bommie, seen from below.
+//   Clownfish a clownfish nestling in and out of its anemone.
 const KINDS = {
   dolphin: { swim: swimDolphin, draw: drawDolphin, prof: DOLPHIN_PROFILE, poke: o => { o.exhale = 1.4; } },
   shark:   { swim: swimShark, draw: drawShark, prof: SHARK_PROFILE, poke: o => { o.burst = 1; } },
   turtle:  { swim: swimTurtle, draw: drawTurtle, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
   manta:   { swim: swimManta, draw: drawManta, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
+  clown:   { swim: swimClown, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
   glide:   { swim: swimGlide, draw: () => {}, rigid: true, calm: true, poke: () => {} } };
 const DOLPHIN_BANDS = [[[40, 62, 92], [120, 166, 222], [214, 236, 255]], [[64, 72, 84], [178, 192, 210], [240, 246, 252]], [[70, 70, 76], [214, 216, 222], [255, 252, 244]]];
 const SHARK_BANDS = [[[58, 54, 48], [158, 150, 136], [232, 226, 212]], [[80, 80, 80], [206, 206, 204], [250, 250, 248]], [[84, 84, 86], [226, 228, 230], [255, 255, 255]]];
@@ -1743,6 +1920,13 @@ const SCENES = {
               shoals: [sh(60, 21, 22, [-4.5, -0.4, -0.6], true, [1.4, 0.5, 0.8]), sh(60, 22, 22, [3.5, -0.4, -0.6], true, [1.4, 0.5, 0.8]),
                        sh(40, 23, 23, [-0.5, -0.75, -0.6], true, [1.0, 0.35, 0.7]), sh(30, 24, 23, [7, -0.7, -0.6], true, [1.0, 0.35, 0.7]),
                        sh(8, 25, 24, [0, -0.3, -0.6], false, [5, 0.4, 1.0])] };
+    } },
+  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { half: 0.62, side: 1.15, pitch: 0.16 }, bands: DOLPHIN_BANDS,
+    build() {
+      HM = null;
+      animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.32, start: 0 })];
+      ENV = { rocks: makeRocks(4, 41), tufts: [], meadow: null, corals: [], shoals: [], stars: [], sandMat: 13, sandStep: 0.14, sandGain: 0.8,
+              anems: [makeAnemone(0, -0.3, 34, 11, 0.85), makeAnemone(2.6, -2.0, 22, 12, 0.75), makeAnemone(-2.7, -1.8, 22, 13, 0.7), makeAnemone(-1.4, 2.2, 16, 14, 0.6)] };
     } },
   turtle: { rate: 'stroke', tag: 'chelonia mydas', tap: 'tap: an extra stroke', view: { half: 0.6, side: 0.95, pitch: 0.5 }, bands: DOLPHIN_BANDS,
     build() {
@@ -1787,7 +1971,7 @@ function step(dt) {
 function render(dt) {
   setCamera(dt);
   depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
-  drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawCorals(TIME); drawShoals(); drawPrey();
+  drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawCorals(TIME); drawAnemones(TIME); drawShoals(); drawPrey();
   for (const o of animals) { PROF = o.kind.prof; o.kind.draw(o); }
   drawBubbles(); drawSnow(TIME);
   outline(); compose(); present();
