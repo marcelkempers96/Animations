@@ -95,6 +95,18 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
 .c { color: var(--comment); }
 .k { color: var(--kw); }
 .n { color: var(--num); }
+.tabs { display: flex; border: 1px solid var(--rule); border-radius: 3px; overflow: hidden; flex: none; }
+.tabs button { font: inherit; font-size: 11px; background: none; color: var(--dim); border: 0; padding: 3px 10px; cursor: pointer; }
+.tabs button + button { border-left: 1px solid var(--rule); }
+.tabs button[aria-selected="true"] { background: var(--ink); color: var(--panel); }
+.tabs button:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
+.tune { flex: 1; min-height: 0; overflow: auto; padding-block: 6px 24px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.tune-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 28px; margin-bottom: 14px; }
+.knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 11px; color: var(--dim); }
+.knob b { color: var(--ink); font-weight: 400; font-variant-numeric: tabular-nums; }
+.knob input { grid-column: 1 / -1; width: 100%; accent-color: var(--ink); margin: 0; }
+.knob input:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; }
 .progress { height: 2px; background: var(--rule); flex: none; }
 .progress i { display: block; height: 100%; width: 0; background: var(--dim); }
 @media (min-width: 900px) { .panel { flex-basis: 30%; } .code { font-size: 12px; } }
@@ -131,11 +143,19 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
   <div class="panel" id="panel" hidden>
     <div class="progress"><i id="bar"></i></div>
     <div class="controls">
+      <div class="tabs" role="tablist" aria-label="Panel">
+        <button type="button" role="tab" data-tab="code" aria-selected="true">Code</button>
+        <button type="button" role="tab" data-tab="tune" aria-selected="false">Tune</button>
+      </div>
       <div class="chips" id="chips" role="tablist" aria-label="Source sections"></div>
       <button class="tool" id="pause" type="button">Pause</button>
       <button class="tool" id="hideSrc" type="button">Hide source</button>
     </div>
     <div class="code" id="code"></div>
+    <div class="tune" id="tune" hidden>
+      <div class="tune-grid" id="tuneGrid"></div>
+      <button class="tool" id="tuneReset" type="button">Reset all</button>
+    </div>
   </div>
 </div>
 
@@ -165,7 +185,18 @@ function rng(seed) {
 }
 let TIME = 0, paused = false;
 // sunlight comes from above, a little from the right and from the viewer
-const _l = Math.hypot(0.25, 1, 0.3), LX = 0.25 / _l, LY = 1 / _l, LZ = 0.3 / _l;
+let LX = 0, LY = 1, LZ = 0;
+function setLight(deg) {                 // the sun's bearing; it stays high, as under water
+  const a = deg * Math.PI / 180, hx = 0.25 * Math.cos(a) - 0.3 * Math.sin(a), hz = 0.25 * Math.sin(a) + 0.3 * Math.cos(a), l = Math.hypot(hx, 1, hz);
+  LX = hx / l; LY = 1 / l; LZ = hz / l;
+}
+setLight(0);
+// [tune]
+// Everything the Tune tab can change. Each slider writes one value here and
+// the renderer reads it every frame, so changes show at once.
+const TUNE = { hue: 0, sat: 1, bright: 1, size: 1, env: 1, water: 0, vis: 1, light: 0, glow: 1, snow: 1, speed: 1, zoom: 1 };
+const keep = i => TUNE.env >= 1 || ((i * 0.6180339887) % 1) < TUNE.env;   // a stable, even thinning of the surroundings
+let SCX = 0, SCY = 0, SCZ = 0, SCK = 1;   // while an animal is drawn: grow it about its own centre
 
 // [grid]
 // Cells are measured in device pixels and rounded, so every glyph lands on
@@ -219,12 +250,13 @@ function setCamera(dt) {
   const r = Math.hypot(FZ, FX) || 1e-6; RX = -FZ / r; RZ = FX / r;   // right = forward x up
   UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;              // up = right x forward
   ASP = CW / CH;
-  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * ASP), (COLS / 2) * dist / VIEW.side) * (cam.zoom || 1);
+  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * ASP), (COLS / 2) * dist / VIEW.side) * (cam.zoom || 1) * TUNE.zoom;
 }
 
 // [projection]
 let PX = 0, PY = 0, PZ = 0;
 function project(x, y, z) {
+  if (SCK !== 1) { x = SCX + (x - SCX) * SCK; y = SCY + (y - SCY) * SCK; z = SCZ + (z - SCZ) * SCK; }
   const dx = x - CX, dy = y - CY, dz = z - CZ;
   PZ = dx * FX + dy * FY + dz * FZ;
   if (PZ < 0.2) return false;
@@ -1315,7 +1347,9 @@ function makeTufts(n, rocks, seed) {
 }
 function makeStars(n, seed) { const R = rng(seed), out = []; for (let i = 0; i < n; i++) out.push({ x: -6 + R() * 12, z: -3 + R() * 4 }); return out; }
 function drawRocks() {
-  for (const k of ENV.rocks) {
+  for (let ri = 0; ri < ENV.rocks.length; ri++) {
+    const k = ENV.rocks[ri];
+    if (!keep(ri)) continue;
     const h = k.r * k.f;
     if (Math.abs(k.x - TX) > 9 || !project(k.x, FLOOR + h * 0.5, k.z)) continue;
     const ppu = FOC / PZ, nA = clamp(Math.ceil(k.r * ppu * 1.1), 5, 40), nP = clamp(Math.ceil(TAU * k.r * ppu * 1.3), 12, 160);
@@ -1356,7 +1390,9 @@ function tube(ax, ay, az, bx, by, bz, r0, r1, L0, m, ppu) {
 }
 function drawTufts(t) {
   const pts = new Float32Array(9 * 3);
-  for (const g of ENV.tufts) {
+  for (let gi = 0; gi < ENV.tufts.length; gi++) {
+    const g = ENV.tufts[gi];
+    if (!keep(gi)) continue;
     if (Math.abs(g.x - TX) > 9 || !project(g.x, FLOOR + g.h * 0.5, g.z)) continue;
     const ppu = FOC / PZ;
     let push = 0;
@@ -1403,6 +1439,7 @@ function drawMeadow(t) {
     for (const i of [0, 12, 24, 36, 48, 60, 71]) bodies.push([o.SPn[i * 3], o.SPn[i * 3 + 1], o.SPn[i * 3 + 2]]);
   }
   for (let i = 0; i < M.n; i++) {
+    if (!keep(i)) continue;
     const x = M.x[i], z = M.z[i], h = M.h[i];
     if (Math.abs(x - TX) > 8.5 || Math.abs(z - TZ) > 6) continue;
     let bx = Math.cos(M.az[i]) * (0.12 + 0.2 * Math.sin(t * 1.1 + x * 0.8 + M.ph[i])) + 0.18 * Math.sin(t * 0.45 + z * 0.4);
@@ -1689,7 +1726,9 @@ function dome(cx, cy, cz, r, h, m, ppu, texture) {
 }
 function drawCorals(t) {
   const cx0 = ENV.cull ? ENV.cull[0] : 7.5, cz0 = ENV.cull ? ENV.cull[1] : 6;
-  for (const c of ENV.corals) {
+  for (let ci = 0; ci < ENV.corals.length; ci++) {
+    const c = ENV.corals[ci];
+    if (!keep(ci)) continue;
     if (Math.abs(c.x - TX) > cx0 || Math.abs(c.z - TZ) > cz0 || !project(c.x, c.y + 0.15, c.z)) continue;
     const ppu = FOC / PZ;
     if (PX < -ppu * 1.2 || PX > COLS + ppu * 1.2 || PY < -ppu || PY > ROWS + ppu) continue;
@@ -1898,7 +1937,10 @@ function crittersStep(dt) {
   }
 }
 function drawCritters(t) {
-  for (const c of ENV.critters || []) {
+  const CR = ENV.critters || [];
+  for (let ki = 0; ki < CR.length; ki++) {
+    const c = CR[ki];
+    if (!keep(ki)) continue;
     const cx = c.x !== undefined ? c.x : c.x0, cz = c.z !== undefined ? c.z : c.z0;
     if (Math.abs(cx - TX) > 9 || Math.abs(cz - TZ) > 7 || !project(cx, FLOOR + 0.1, cz)) continue;
     const ppu = FOC / PZ;
@@ -2146,7 +2188,7 @@ function driftSnow(dt) {
 }
 function drawSnow(t) {
   if (ENV.streaks) {                       // a steady slant of marine snow across the whole view, as in the clownfish film
-    const n = (COLS * ROWS * 0.035) | 0;
+    const n = (COLS * ROWS * 0.035 * TUNE.snow) | 0;
     for (let k = 0; k < n; k++) {
       const h1 = hash2(k, 7), h2 = hash2(k, 13), sp = 2 + 4 * hash2(k, 29);
       const yy = ((h2 * ROWS + t * sp) % ROWS + ROWS) % ROWS, xx = ((h1 * COLS - t * sp * 0.6) % COLS + COLS) % COLS;
@@ -2157,7 +2199,8 @@ function drawSnow(t) {
       chr[i] = r > 0.96 ? 43 : r > 0.93 ? 42 : 47;
     }
   }
-  for (let i = 0; i < SNOWN * 4; i += 4) {
+  const nf = Math.min(SNOWN, Math.round(SNOWN * TUNE.snow)) * 4;
+  for (let i = 0; i < nf; i += 4) {
     let x = snow[i] - TX; x = TX + ((((x + 6) % 12) + 12) % 12) - 6;
     let z = snow[i + 2] - TZ; z = TZ + ((((z + 3) % 6) + 6) % 6) - 3;
     if (!project(x, snow[i + 1], z)) continue;
@@ -2321,12 +2364,22 @@ const STOPS = [null,
   [[8, 24, 84], [36, 96, 236], [150, 196, 255]],      // 100 blue tang
   [[6, 6, 14], [20, 22, 40], [44, 48, 70]]];          // 101 tang black
 const COLORS = [], GLYPH = [];
+const ANIMAL_MATS = new Set([1, 2, 3, 25, 26, 27, 28, 29, 30, 50, 51, 52, 53, 58, 89, 90, 100, 101]);
+function tint([r, g, b], animal) {
+  if (animal && TUNE.hue) {                                 // turn the hue round the colour wheel
+    const a = TUNE.hue * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), k = 1 / 3, q = Math.sqrt(k);
+    const m = [c + (1 - c) * k, k * (1 - c) - q * s, k * (1 - c) + q * s];
+    [r, g, b] = [m[0] * r + m[1] * g + m[2] * b, m[2] * r + m[0] * g + m[1] * b, m[1] * r + m[2] * g + m[0] * b];
+  }
+  const y = 0.3 * r + 0.59 * g + 0.11 * b;
+  return `rgb(${[r, g, b].map(v => Math.round(clamp((y + (v - y) * TUNE.sat) * TUNE.bright, 0, 255))).join(',')})`;
+}
 function buildColors() {
   COLORS.length = 0;
   for (let m = 0; m < STOPS.length; m++) for (let l = 0; l < LV; l++) {
   if (!STOPS[m]) { COLORS.push('#000'); continue; }
   const t = (l + 0.5) / LV, A = t < 0.5 ? STOPS[m][0] : STOPS[m][1], B = t < 0.5 ? STOPS[m][1] : STOPS[m][2], u = t < 0.5 ? t * 2 : t * 2 - 1;
-  COLORS.push(`rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * u)).join(',')})`);
+  COLORS.push(tint(A.map((v, i) => v + (B[i] - v) * u), ANIMAL_MATS.has(m)));
   }
 }
 for (let c = 0; c < 128; c++) GLYPH.push(String.fromCharCode(c));
@@ -2339,7 +2392,7 @@ function compose() {
   counts.fill(0); drawn = 0;
   for (let i = 0; i < n; i++) {
     if (!mat[i]) { bucket[i] = -1; continue; }
-    const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3) : lum[i];
+    const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3 / TUNE.vis) : lum[i];
     if (vis < 0.05) { bucket[i] = -1; continue; }
     lum[i] = ENV.boost && kind[i] !== GROUND ? Math.min(1, vis * 1.35 + 0.22) : vis;
     const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
@@ -2378,10 +2431,10 @@ function present() {
   vctx.setTransform(1, 0, 0, 1, 0, 0);
   vctx.globalCompositeOperation = 'source-over'; vctx.globalAlpha = 1;
   const g = vctx.createLinearGradient(0, 0, 0, view.height);
-  g.addColorStop(0, '#000000'); g.addColorStop(1, '#000000');
+  const w = TUNE.water; g.addColorStop(0, `rgb(${Math.round(4 * w)},${Math.round(46 * w)},${Math.round(72 * w)})`); g.addColorStop(1, `rgb(0,${Math.round(10 * w)},${Math.round(20 * w)})`);
   vctx.fillStyle = g; vctx.fillRect(0, 0, view.width, view.height);
   bctx.clearRect(0, 0, bloom.width, bloom.height); bctx.drawImage(txt, 0, 0, bloom.width, bloom.height);
-  vctx.imageSmoothingEnabled = true; vctx.globalCompositeOperation = 'lighter'; vctx.globalAlpha = ENV.glow || 0.45;
+  vctx.imageSmoothingEnabled = true; vctx.globalCompositeOperation = 'lighter'; vctx.globalAlpha = Math.min(1, (ENV.glow || 0.45) * TUNE.glow);
   vctx.drawImage(bloom, 0, 0, view.width, view.height);
   vctx.globalAlpha = 1; vctx.globalCompositeOperation = 'source-over';
   vctx.drawImage(txt, 0, 0);
@@ -2423,7 +2476,9 @@ function shoals(dt) {
   }
 }
 function drawShoals() {
-  for (const S of ENV.shoals) {
+  for (let si = 0; si < ENV.shoals.length; si++) {
+    const S = ENV.shoals[si];
+    if (!keep(si)) continue;
     const { p, v } = S;
     for (let i = 0; i < S.n * 3; i += 3) {
       if (!project(p[i] - v[i] * 0.1 - 0.001, p[i + 1] - v[i + 1] * 0.1, p[i + 2] - v[i + 2] * 0.1)) continue;
@@ -2585,7 +2640,8 @@ function render(dt) {
   setCamera(dt);
   depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
   drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawCorals(TIME); drawCritters(TIME); drawAnemones(TIME, dt); drawShoals(); drawPrey();
-  for (const o of animals) { PROF = o.kind.prof; o.kind.draw(o); }
+  for (const o of animals) { PROF = o.kind.prof; SCX = o.cx; SCY = o.cy; SCZ = o.cz; SCK = TUNE.size; o.kind.draw(o); }
+  SCK = 1;
   if (ENV.waterline) drawWaterline(TIME);
   drawBubbles(); drawSnow(TIME);
   outline(); compose(); present();
@@ -2600,7 +2656,7 @@ if (document.fonts) document.fonts.ready.then(resize);
 const hud = { spd: document.getElementById('spd'), hz: document.getElementById('hz'), dep: document.getElementById('dep'), chars: document.getElementById('chars') };
 let last = performance.now(), frame = 0;
 function tick(now) {
-  const dt = Math.min(0.05, (now - last) / 1000) * (REDUCED ? 0.6 : 1); last = now;
+  const dt = Math.min(0.05, (now - last) / 1000) * (REDUCED ? 0.6 : 1) * TUNE.speed; last = now;
   if (!paused) step(dt);
   render(paused ? 0 : dt);
   if (frame++ % 6 === 0) {
@@ -2713,6 +2769,42 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
   if (window.innerWidth >= 900) panel.hidden = false;      // desktops have room for the code; phones open it with Code
   showBtn.setAttribute('aria-pressed', String(!panel.hidden));
   showBtn.addEventListener('click', () => { panel.hidden = !panel.hidden; showBtn.setAttribute('aria-pressed', String(!panel.hidden)); });
+  // Tune tab
+  const tabs = document.querySelectorAll('[data-tab]'), tuneBox = document.getElementById('tune'), grid = document.getElementById('tuneGrid');
+  function showTab(name) {
+    for (const t of tabs) t.setAttribute('aria-selected', String(t.dataset.tab === name));
+    tuneBox.hidden = name !== 'tune'; code.hidden = name !== 'code'; chips.hidden = name !== 'code';
+    if (name === 'tune') hold = 1e9; else hold = 0;
+  }
+  for (const t of tabs) t.addEventListener('click', () => showTab(t.dataset.tab));
+  const KNOBS = [
+    ['hue', 'Animal colour', -180, 180, 1, 0, v => (v > 0 ? '+' : '') + v + '°', true],
+    ['sat', 'Colour intensity', 0, 2, 0.01, 1, v => Math.round(v * 100) + '%', true],
+    ['bright', 'Brightness', 0.4, 1.8, 0.01, 1, v => Math.round(v * 100) + '%', true],
+    ['size', 'Animal size', 0.5, 1.8, 0.01, 1, v => v.toFixed(2) + '×'],
+    ['env', 'Environment', 0, 1, 0.01, 1, v => Math.round(v * 100) + '%'],
+    ['water', 'Water colour', 0, 1, 0.01, 0, v => v ? Math.round(v * 100) + '% blue' : 'black'],
+    ['vis', 'Visibility', 0.3, 3, 0.01, 1, v => Math.round(v * 15) + ' m'],
+    ['light', 'Sun direction', -180, 180, 1, 0, v => v + '°'],
+    ['glow', 'Glow', 0, 2.2, 0.01, 1, v => Math.round(v * 100) + '%'],
+    ['snow', 'Marine snow', 0, 3, 0.01, 1, v => Math.round(v * 100) + '%'],
+    ['speed', 'Speed', 0, 3, 0.01, 1, v => v.toFixed(2) + '×'],
+    ['zoom', 'Camera zoom', 0.5, 2.5, 0.01, 1, v => v.toFixed(2) + '×']];
+  let recolour = 0;
+  const inputs = KNOBS.map(([key, name, min, max, stepv, def, fmt, colour]) => {
+    const row = document.createElement('label'); row.className = 'knob';
+    row.innerHTML = `<span>${name}</span><b></b><input type="range" id="tune-${key}" min="${min}" max="${max}" step="${stepv}" value="${def}">`;
+    const input = row.querySelector('input'), out = row.querySelector('b');
+    const apply = () => {
+      const v = +input.value; TUNE[key] = v; out.textContent = fmt(v);
+      if (key === 'light') setLight(v);
+      if (colour && !recolour) recolour = requestAnimationFrame(() => { recolour = 0; buildColors(); });   // at most once a frame
+    };
+    input.addEventListener('input', apply); apply();
+    grid.appendChild(row);
+    return [input, def, apply];
+  });
+  document.getElementById('tuneReset').addEventListener('click', () => { for (const [input, def, apply] of inputs) { input.value = def; apply(); } });
   const pauseBtn = document.getElementById('pause');
   pauseBtn.addEventListener('click', () => {
     const p = pauseBtn.textContent === 'Pause';
