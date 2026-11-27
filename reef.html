@@ -309,7 +309,7 @@ const ROUTE_POD = [[-11, -0.4, -5.2], [-4, -0.7, -5.4], [3, -0.3, -5.0], [11, -0
 // a slow oval round its anemone, dipping into the tentacles once a lap
 // a small loop through its anemone, at the height of the tentacle tips;
 // once a lap it pushes deep into the arms
-const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [0.65 * Math.cos(a), -0.72 + 0.1 * Math.sin(2 * a), -0.12 + 0.25 * Math.sin(a)]; });
+const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [0.65 * Math.cos(a), -0.72 + 0.1 * Math.sin(2 * a), -0.5 + 0.3 * Math.sin(a)]; });
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
 // the reef camera drifts in a wide loop over the whole reef, looking down
@@ -2304,14 +2304,14 @@ const STOPS = [null,
   [[72, 62, 10], [248, 224, 52], [255, 250, 184]],    // 48 feather star
   [[44, 32, 36], [150, 104, 112], [222, 184, 188]],   // 49 coralline algae
   [[62, 38, 12], [204, 144, 54], [252, 214, 134]],    // 50 turtle shell: amber rays
-  [[84, 62, 112], [238, 66, 18], [255, 168, 52]],     // 51 clownfish: DARK -> DEEP -> FACE (the reference's own colours)
-  [[84, 62, 112], [216, 218, 234], [250, 248, 240]],  // 52 clownfish white: DARK -> RIM -> WHITE
-  [[40, 30, 56], [84, 62, 112], [120, 100, 150]],     // 53 clownfish: DARK edges
-  [[30, 36, 52], [150, 160, 184], [244, 246, 252]],   // 54 anemone: blue-grey roots, white tips
+  [[150, 40, 12], [246, 100, 20], [255, 172, 56]],    // 51 clownfish: deep -> orange -> golden face
+  [[104, 100, 112], [214, 212, 212], [250, 248, 240]], // 52 clownfish white
+  [[28, 20, 40], [70, 52, 96], [100, 82, 128]],      // 53 clownfish: thin dark edges
+  [[34, 38, 50], [140, 148, 170], [232, 236, 246]],   // 54 anemone: grey-white
   [[72, 10, 52], [236, 64, 172], [255, 190, 236]],    // 55 fairy wrasse: magenta
   [[10, 60, 44], [52, 214, 156], [190, 255, 226]],    // 56 parrotfish: green
   [[60, 24, 84], [168, 104, 255], [228, 204, 255]],   // 57 purple queen anthias
-  [[84, 62, 112], [150, 140, 200], [205, 222, 255]],  // 58 clownfish shadow side: DARK -> RIM
+  [[46, 34, 66], [92, 70, 124], [146, 126, 182]],    // 58 clownfish shade: dusky lavender
   [[64, 56, 40], [214, 198, 164], [252, 244, 220]],   // 59 coral tips: cream
   [[44, 26, 52], [140, 92, 160], [220, 190, 236]],   // 60 acropora: purple
   [[60, 38, 36], [196, 142, 130], [246, 214, 204]],   // 61 acropora: pink-tan
@@ -2515,8 +2515,8 @@ const SCENES = {
       animals = [makeSwimmer(k, { route: ROUTE_A, base: 1.45, start: 0.12 }),
                  makeSwimmer(k, P), makeSwimmer(k, { ...P, lag: 1.2, side: 0.7, up: 0.2, seed: 1 }),
                  makeSwimmer(k, { ...P, lag: 1.6, side: -0.65, up: -0.15, seed: 2 }), makeSwimmer(k, { ...P, lag: 2.8, side: 0.15, up: 0.3, seed: 3 }),
-                 makeSwimmer(k, { route: ROUTE_A, base: 1.45, start: 0.12, side: 40, seed: 5 })];
-      animals[animals.length - 1].visitor = true; RINGS.length = 0;
+];
+      RINGS.length = 0;
       const rocks = makeRocks(9, 5);
       ENV = { rocks, tufts: makeTufts(40, rocks, 6), meadow: null, corals: [], shoals: [silver(17, [-1.4, -0.75, -1.3])], stars: makeStars(8, 7), waterline: true, noSurface: true };
     } },
@@ -2569,14 +2569,14 @@ const SCENES = {
       M.n = keep.length;
       ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
-  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { fixed: 0, font: 1.2, half: 0.36, side: 0.6, pitch: 0.1 }, bands: DOLPHIN_BANDS,
+  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
       animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0 })];
       animals[1].scale = 0.85;
       const R = rng(42), pinks = [];
       for (let i = 0; i < 3; i++) { const c = makeColony('dendro', -1.9 + R() * 0.6, FLOOR, -1.2 + R() * 0.5, R, a => a[0]); c.m = 80; for (const t of c.tips) { t[0] *= 0.5; t[1] *= 0.5; t[2] *= 0.5; t[3] *= 0.5; } pinks.push(c); }
-      ENV = { rocks: [], tufts: [], meadow: null, corals: pinks, shoals: [], stars: [], sandMat: 13, sandStep: 0.09, sandGain: 0.75, floorGlyph: 58, streaks: true, glow: 1.05, noSurface: true,
+      ENV = { rocks: [], tufts: [], meadow: null, corals: pinks, shoals: [], stars: [], sandMat: 13, sandStep: 0.09, sandGain: 0.75, floorGlyph: 58, streaks: true, glow: 0.8, noSurface: true,
               anems: [makeAnemone(0.1, -1.1, 22, 11, 1.7), makeAnemone(2.0, -1.5, 12, 12, 1.4), makeAnemone(-2.0, -1.6, 12, 13, 1.4), makeAnemone(0.9, -2.8, 10, 14, 1.3), makeAnemone(-1.1, -2.9, 10, 15, 1.3)] };
       for (const A of ENV.anems) A.fishes = animals;
     } },
