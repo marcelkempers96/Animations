@@ -1896,7 +1896,7 @@ function makeCritters(seed, bommies, near, many) {
     out.push({ type: 'moray', x, z, y: ground(x, z) + 0.1, a: a, out: 0.4, ph: R() * TAU, m: i === 1 ? 99 : 91 });
   }
   for (let i = 0; i < 7; i++) { const [x, z] = sandSpot(); out.push({ k: many ? 1.6 : 1, type: 'crab', x, z, x0: x, z0: z, h: R() * TAU, ph: R() * TAU, size: 0.06 + R() * 0.04, m: R() < 0.6 ? 92 : 44 }); }
-  for (let i = 0; i < (many ? 6 : 2); i++) {
+  for (let i = 0; i < (many ? 1 : 2); i++) {
     const [x, z] = many ? sandSpot() : byBommie(bommies[(i * 7 + 4) % bommies.length], 1.05), a = R() * TAU;
     out.push({ type: 'lobster', x0: x, z0: z, a, s: 0, ph: R() * TAU, m: i % 2 ? 94 : 93, k: many ? 1.8 : 1 });
   }
