@@ -1,0 +1,779 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>*,*::before,*::after{box-sizing:border-box}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Lantern Jelly</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a full-bleed ASCII stage on top, the scene's own source scrolling beneath it */
+:root {
+  --abyss: #03050a;
+  --panel: #080c14;
+  --ink: #cfd6e4;
+  --dim: #5f6c84;
+  --faint: #34405a;
+  --rule: #151c2a;
+  --comment: #86a892;
+  --num: #e6ac72;
+  --kw: #b7a4ff;
+  --glow: #ff86b8;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--abyss); color: var(--ink); font-family: var(--mono); overflow: hidden; }
+.app { height: 100%; display: flex; flex-direction: column; }
+.stage { position: relative; flex: 1 1 62%; min-height: 0; touch-action: none; cursor: grab; outline: none; }
+.stage:active { cursor: grabbing; }
+.stage:focus-visible { box-shadow: inset 0 0 0 1px var(--faint); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hud, .hint {
+  position: absolute; left: 0; right: 0; display: flex; gap: 1.4em; pointer-events: none;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.hud { top: 12px; }
+.hud b { color: var(--ink); font-weight: 400; }
+.hud .tag { margin-left: auto; }
+.hint { bottom: 8px; color: var(--faint); font-size: 11px; }
+.panel { flex: 0 0 38%; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-top: 1px solid var(--rule); }
+.panel[hidden] { display: none !important; }
+.controls {
+  display: flex; align-items: center; gap: 8px; padding-block: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip, .tool {
+  font: inherit; font-size: 11px; background: none; color: var(--dim); border: 1px solid var(--rule);
+  padding: 3px 9px; border-radius: 3px; white-space: nowrap; cursor: pointer;
+}
+.chip:hover, .tool:hover { color: var(--ink); }
+.chip.on { color: var(--ink); border-color: var(--faint); }
+.chip:focus-visible, .tool:focus-visible { outline: 1px solid var(--glow); outline-offset: 1px; }
+.float { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: 8px; background: var(--panel); }
+.code {
+  position: relative; flex: 1; min-height: 0; overflow: auto; font-size: 11.5px; line-height: 1.6;
+  padding-block: 2px 24px; padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.ln { display: flex; white-space: pre; opacity: .38; transition: opacity .5s; }
+.ln.on { opacity: 1; }
+.no { flex: 0 0 4.2em; text-align: right; padding-right: 1.3em; color: var(--faint); user-select: none; }
+.c { color: var(--comment); }
+.k { color: var(--kw); }
+.n { color: var(--num); }
+.progress { height: 2px; background: var(--rule); flex: none; }
+.progress i { display: block; height: 100%; width: 0; background: var(--dim); }
+@media (min-width: 900px) { .panel { flex-basis: 34%; } .code { font-size: 12px; } }
+</style>
+
+<div class="app">
+  <div class="stage" id="stage" tabindex="0" aria-label="Animated ASCII jellyfish drifting through a kelp forest. Drag or use arrow keys to orbit, tap or press space to startle it.">
+    <canvas id="view"></canvas>
+    <div class="hud" aria-hidden="true">
+      <span>pulse <b id="hz">0.0</b> Hz</span>
+      <span>speed <b id="spd">0.00</b></span>
+      <span>chars <b id="chars">0</b></span>
+      <span class="tag">depth <b id="dep">0.0</b> m</span>
+    </div>
+    <div class="hint" aria-hidden="true">drag to orbit · tap to startle</div>
+    <button class="tool float" id="showSrc" type="button" hidden>Show source</button>
+  </div>
+  <div class="panel" id="panel">
+    <div class="progress"><i id="bar"></i></div>
+    <div class="controls">
+      <div class="chips" id="chips" role="tablist" aria-label="Source sections"></div>
+      <button class="tool" id="pause" type="button">Pause</button>
+      <button class="tool" id="hideSrc" type="button">Hide source</button>
+    </div>
+    <div class="code" id="code"></div>
+  </div>
+</div>
+
+<script id="scene">
+// [setup]
+// One frame: physics moves everything, then every visible thing becomes a
+// cloud of points. The points are projected onto a grid of character cells
+// and each cell keeps the nearest one. Surfaces are shaded with a density
+// ramp; thin things and silhouettes get a glyph that follows their slope.
+const TAU = Math.PI * 2, STEP = 1 / 60, FLOOR_Y = -1.3;
+const MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const stage = document.getElementById('stage');
+const view = document.getElementById('view'), vctx = view.getContext('2d');
+const txt = document.createElement('canvas'), tctx = txt.getContext('2d');      // sharp glyphs
+const bloom = document.createElement('canvas'), bctx = bloom.getContext('2d');  // small copy = soft glow
+const haze = document.createElement('canvas'), hctx = haze.getContext('2d');    // smaller copy = wide glow
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+function rng(seed) {
+  return () => {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let TIME = 0, paused = false;
+
+// [grid]
+// Every cell remembers: how far away its point is, how bright, what it is made
+// of, an explicit glyph (0 = pick from the ramp), and how much of what lies
+// just behind it may show through (the bell is glass; kelp barely).
+let W = 1, H = 1, DPR = 1, FONT = 12, CW = 7, CH = 14, COLS = 1, ROWS = 1, OX = 0, OY = 0;
+let depth, lum, mat, chr, glass, kind, bucket, order;
+const SURFACE = 1, LINE = 2, SAND = 3, SNOW = 4, EDGE = 5;
+function resize() {
+  const r = stage.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, devicePixelRatio || 1);
+  view.width = txt.width = Math.round(W * DPR); view.height = txt.height = Math.round(H * DPR);
+  bloom.width = Math.max(1, Math.round(W / 4)); bloom.height = Math.max(1, Math.round(H / 4));
+  haze.width = Math.max(1, Math.round(W / 14)); haze.height = Math.max(1, Math.round(H / 14));
+  FONT = W < 560 ? 10 : W < 1000 ? 11 : 12;
+  cam.dist = W < 560 ? 2.8 : 3.5;                     // phones get a closer look
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.font = FONT + 'px ' + MONO;
+  CW = tctx.measureText('M').width; CH = Math.round(FONT * 1.2);
+  COLS = Math.max(1, Math.floor(W / CW)); ROWS = Math.max(1, Math.floor(H / CH));
+  OX = (W - COLS * CW) / 2; OY = (H - ROWS * CH) / 2;
+  const n = COLS * ROWS;
+  depth = new Float32Array(n); lum = new Float32Array(n); glass = new Float32Array(n);
+  mat = new Uint8Array(n); chr = new Uint8Array(n); kind = new Uint8Array(n);
+  bucket = new Int16Array(n); order = new Int32Array(n);
+}
+
+// [camera]
+// A slow orbit that keeps half an eye on the jelly. Cells are taller than
+// they are wide, so vertical distances are squeezed by CW / CH.
+const cam = { yaw: 0.5, pitch: 0.14, dist: 3.5, dyaw: 0, dpitch: 0, tx: 0, ty: 0, tz: 0 };
+let CX = 0, CY = 0, CZ = 0, RX = 1, RZ = 0, UX = 0, UY = 1, UZ = 0, FX = 0, FY = 0, FZ = -1, FOC = 30, ASP = 0.5;
+function setCamera(t) {
+  cam.tx += (J.x * 0.5 - cam.tx) * 0.02;
+  cam.ty += (J.y * 0.4 - 0.15 - cam.ty) * 0.02;
+  cam.tz += (J.z * 0.5 - cam.tz) * 0.02;
+  const yaw = cam.yaw + cam.dyaw + (REDUCED ? 0 : t * 0.04);
+  const pitch = clamp(cam.pitch + cam.dpitch, -0.2, 1.1);
+  CX = cam.tx + cam.dist * Math.cos(pitch) * Math.sin(yaw);
+  CY = cam.ty + cam.dist * Math.sin(pitch);
+  CZ = cam.tz + cam.dist * Math.cos(pitch) * Math.cos(yaw);
+  FX = cam.tx - CX; FY = cam.ty - CY; FZ = cam.tz - CZ;
+  const f = Math.hypot(FX, FY, FZ); FX /= f; FY /= f; FZ /= f;
+  const r = Math.hypot(FZ, FX); RX = -FZ / r; RZ = FX / r;   // right = forward x up
+  UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;      // up = right x forward
+  ASP = CW / CH;
+  FOC = Math.min(COLS, ROWS / ASP) * 1.05;
+}
+
+// [projection]
+let PX = 0, PY = 0, PZ = 0;
+function project(x, y, z) {
+  const dx = x - CX, dy = y - CY, dz = z - CZ;
+  PZ = dx * FX + dy * FY + dz * FZ;
+  if (PZ < 0.25) return false;
+  PX = COLS * 0.5 + (dx * RX + dz * RZ) / PZ * FOC;
+  PY = ROWS * 0.5 - (dx * UX + dy * UY + dz * UZ) / PZ * FOC * ASP;
+  return true;
+}
+// A point wins its cell if it is nearer, or if it asks to be seen through
+// (see) and the cell holds glass at most that far in front of it.
+function put(px, py, pz, L, m, ch, see, gl, k) {
+  if (px < 0 || py < 0 || px >= COLS || py >= ROWS) return;
+  const i = (py | 0) * COLS + (px | 0), d = depth[i];
+  if (!(pz < d || pz < d + Math.min(see, glass[i]))) return;
+  if (pz > 3.4) L *= Math.exp((3.4 - pz) * 0.42);           // the water swallows distant things
+  depth[i] = pz < d ? pz : d; lum[i] = L; mat[i] = m; chr[i] = ch; glass[i] = gl; kind[i] = k;
+}
+function plot(x, y, z, L, m, ch, see, gl, k) { if (project(x, y, z)) put(PX, PY, PZ, L, m, ch, see, gl, k); }
+function slope(vx, vy) {            // screen direction (y down) -> | / \ -
+  if (vx < 0) { vx = -vx; vy = -vy; }
+  const a = Math.atan2(vy, vx);
+  return a > 1.18 || a < -1.18 ? 124 : a > 0.39 ? 92 : a < -0.39 ? 47 : 45;
+}
+function line(ax, ay, az, bx, by, bz, L, m, see, gl, k) {
+  if (!project(ax, ay, az)) return;
+  const x0 = PX, y0 = PY, z0 = PZ;
+  if (!project(bx, by, bz)) return;
+  const x1 = PX, y1 = PY, z1 = PZ, ch = slope((x1 - x0) * CW, (y1 - y0) * CH);
+  const n = Math.min(90, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 1.4) + 1);
+  for (let s = 0; s <= n; s++) {
+    const t = s / n;
+    put(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, z0 + (z1 - z0) * t, L, m, ch, see, gl, k);
+  }
+}
+
+// [light]
+// Sun from above and a little in front; rims light up where a surface turns
+// away from the eye, which is most of what makes the bell read as glass.
+const _l = Math.hypot(0.3, 1, 0.25), LX = 0.3 / _l, LY = 1 / _l, LZ = 0.25 / _l;
+function fresnel(x, y, z, nx, ny, nz) {
+  const vx = CX - x, vy = CY - y, vz = CZ - z, v = Math.hypot(vx, vy, vz);
+  return 1 - Math.abs(nx * vx + ny * vy + nz * vz) / v;
+}
+
+// [swimmer]
+// Nobody moves the jelly along a curve. It has a position, a velocity and an
+// axis. It tilts its bell towards the next mark of its round, and each time
+// the bell snaps shut the water it squeezes out pushes it along that axis.
+// Drag slows it again between beats; it sinks a little when it rests.
+const ROUTE = [[-0.9, 0.55, 0.35], [-1.25, 0.1, -0.7], [-0.2, 0.4, -1.2], [1.0, 0.8, -0.55],
+               [1.3, 0.25, 0.55], [0.35, 0.05, 0.95], [-0.45, 0.9, 0.2]];
+const THRUST = 0.75, DRAG = 1.5, SINK = 0.06;
+const J = { x: 0, y: 0.4, z: 0.6, vx: 0, vy: 0, vz: 0, ax: 0, ay: 1, az: 0,
+            e1x: 1, e1y: 0, e1z: 0, e2x: 0, e2y: 0, e2z: 1, ph: 0, hz: 0.8, c: 0, leg: 0, legT: 0, startle: 0 };
+function contraction(ph) {          // 0 = relaxed, 1 = shut. Snaps fast, opens slow.
+  const f = ph - Math.floor(ph);
+  return f < 0.28 ? Math.sin(f / 0.28 * Math.PI / 2) : 0.5 + 0.5 * Math.cos((f - 0.28) / 0.72 * Math.PI);
+}
+function swim(dt) {
+  const T = ROUTE[J.leg];
+  let dx = T[0] - J.x, dy = T[1] - J.y, dz = T[2] - J.z;
+  const dist = Math.hypot(dx, dy, dz) || 1e-6;
+  J.legT += dt;
+  if (dist < 0.3 || J.legT > 22) { J.leg = (J.leg + 1) % ROUTE.length; J.legT = 0; }
+  dx /= dist; dy /= dist; dz /= dist;
+  let wx = dx * 0.5, wy = Math.max(0.9, dy * 0.5 + 0.9), wz = dz * 0.5;   // bell-first, but never far from upright
+  const wl = Math.hypot(wx, wy, wz); wx /= wl; wy /= wl; wz /= wl;
+  const turn = Math.min(1, dt * 0.8);
+  J.ax += (wx - J.ax) * turn; J.ay += (wy - J.ay) * turn; J.az += (wz - J.az) * turn;
+  const al = Math.hypot(J.ax, J.ay, J.az); J.ax /= al; J.ay /= al; J.az /= al;
+
+  const effort = dy < -0.3 ? 0.05 : clamp(dist / 1.2, 0.3, 1);   // going down: barely beat, sink
+  J.startle *= Math.exp(-dt * 0.6);
+  J.hz += (0.3 + 0.75 * effort + 1.4 * J.startle - J.hz) * Math.min(1, dt * 0.7);
+  J.ph += J.hz * dt;
+  const before = J.c; J.c = contraction(J.ph);
+  const push = Math.max(0, J.c - before) * THRUST * (1 + J.startle);
+  J.vx += J.ax * push; J.vy += J.ay * push; J.vz += J.az * push;
+  const k = Math.exp(-DRAG * dt);
+  J.vx *= k; J.vy = J.vy * k - (SINK + 0.4 * Math.max(0, -dy)) * dt; J.vz *= k;
+  if (J.y < FLOOR_Y + 1.1) J.vy += (FLOOR_Y + 1.1 - J.y) * dt * 2;
+  if (J.y > 1.1) J.vy -= (J.y - 1.1) * dt * 2;
+  J.x += J.vx * dt; J.y += J.vy * dt; J.z += J.vz * dt;
+
+  // body frame: keep e1 square to the axis and let it turn slowly about it
+  const d = J.e1x * J.ax + J.e1y * J.ay + J.e1z * J.az;
+  J.e1x -= J.ax * d; J.e1y -= J.ay * d; J.e1z -= J.az * d;
+  let el = Math.hypot(J.e1x, J.e1y, J.e1z); J.e1x /= el; J.e1y /= el; J.e1z /= el;
+  cross2();
+  const s = Math.sin(dt * 0.1), c = Math.cos(dt * 0.1);
+  J.e1x = J.e1x * c + J.e2x * s; J.e1y = J.e1y * c + J.e2y * s; J.e1z = J.e1z * c + J.e2z * s;
+  el = Math.hypot(J.e1x, J.e1y, J.e1z); J.e1x /= el; J.e1y /= el; J.e1z /= el;
+  cross2();
+}
+function cross2() {                  // e2 = e1 x axis
+  J.e2x = J.e1y * J.az - J.e1z * J.ay; J.e2y = J.e1z * J.ax - J.e1x * J.az; J.e2z = J.e1x * J.ay - J.e1y * J.ax;
+}
+let WX = 0, WY = 0, WZ = 0;
+function toWorld(lx, ly, lz) {
+  WX = J.x + J.e1x * lx + J.ax * ly + J.e2x * lz;
+  WY = J.y + J.e1y * lx + J.ay * ly + J.e2y * lz;
+  WZ = J.z + J.e1z * lx + J.az * ly + J.e2z * lz;
+}
+
+// [bell]
+// A dome swept a little past its equator so the margin tucks under. When it
+// contracts it gets narrower and taller, the margin pulls in hardest, and a
+// slow wobble runs round it. Sixteen lappets scallop the edge.
+const BELL_R = 0.6, BELL_H = 0.5, BELL_S = 30, BELL_P = 120;
+const BL = [0, 0, 0], BN = [0, 0, 0];
+function bellLocal(s, phi, c, t) {
+  const R = BELL_R * (1 - 0.18 * c), Hh = BELL_H * (1 + 0.14 * c);
+  const a = s * Math.PI / 2 * 1.08, m = s * s * s * s;
+  let rho = R * Math.sin(a), y = Hh * Math.cos(a) - 0.06 * m * c;
+  rho *= 1 - 0.22 * c * m + 0.035 * m * Math.abs(Math.sin(8 * phi));
+  rho *= 1 + 0.02 * s * Math.sin(3 * phi + t * 1.3);
+  BL[0] = rho * Math.cos(phi); BL[1] = y; BL[2] = rho * Math.sin(phi);
+  let nx = BL[0] / (R * R), ny = y / (Hh * Hh), nz = BL[2] / (R * R);
+  const nl = Math.hypot(nx, ny, nz) || 1; BN[0] = nx / nl; BN[1] = ny / nl; BN[2] = nz / nl;
+}
+function drawBell(t) {
+  const c = J.c;
+  for (let i = 0; i <= BELL_S; i++) {
+    const s = i / BELL_S;
+    for (let j = 0; j < BELL_P; j++) {
+      bellLocal(s, j / BELL_P * TAU, c, t);
+      toWorld(BL[0], BL[1], BL[2]);
+      const nx = J.e1x * BN[0] + J.ax * BN[1] + J.e2x * BN[2];
+      const ny = J.e1y * BN[0] + J.ay * BN[1] + J.e2y * BN[2];
+      const nz = J.e1z * BN[0] + J.az * BN[1] + J.e2z * BN[2];
+      const f = fresnel(WX, WY, WZ, nx, ny, nz);
+      const L = 0.14 + 0.3 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.85 * f * f + 0.35 * c * s ** 6;
+      plot(WX, WY, WZ, L, 1, 0, 0, 0.9, SURFACE);
+    }
+  }
+  // the ring canal: a bright thread around the margin
+  let px = 0, py = 0, pz = 0;
+  for (let j = 0; j <= BELL_P; j += 2) {
+    bellLocal(0.995, j / BELL_P * TAU, c, t); toWorld(BL[0], BL[1], BL[2]);
+    if (j) line(px, py, pz, WX, WY, WZ, 0.72 + 0.28 * c, 4, 0.08, 0.9, LINE);
+    px = WX; py = WY; pz = WZ;
+  }
+}
+
+// [gonads]
+// Four horseshoes under the dome, seen through it. They flare on every beat.
+function drawGonads() {
+  const c = J.c, R = BELL_R * (1 - 0.18 * c), Hh = BELL_H * (1 + 0.14 * c);
+  for (let k = 0; k < 4; k++) {
+    const a = k * TAU / 4 + TAU / 8, gx = Math.cos(a) * R * 0.4, gz = Math.sin(a) * R * 0.4;
+    for (let u = 0; u <= 28; u++) {
+      const th = a + Math.PI * 1.32 + u / 28 * Math.PI * 1.36;     // the gap faces the middle
+      for (let v = 0; v <= 4; v++) {
+        const rr = (0.11 + v * 0.016) * R, lx = gx + Math.cos(th) * rr, lz = gz + Math.sin(th) * rr;
+        toWorld(lx, Hh * 0.45 - 0.6 * (lx * lx + lz * lz) / R, lz);
+        plot(WX, WY, WZ, (0.55 + 0.4 * c) * (1 - 0.35 * Math.abs(v - 2) / 2), 2, 0, 0.9, 0, SURFACE);
+      }
+    }
+  }
+}
+
+// [chains]
+// Tentacles, oral arms and kelp are all the same thing: a chain of points.
+// Each step:
+//   1. water drags every node towards the local current (the swell plus the
+//      jelly's wake), and buoyancy or weight pulls it up or down;
+//   2. kelp springs back towards its rest pose, hard at the root, barely at
+//      the tip, so the tips arrive late;
+//   3. no kelp may be inside the bell: it is pushed out to the skin;
+//   4. walking out from the root, every link is put back to its length.
+let FLX = 0, FLY = 0, FLZ = 0;
+function current(x, y, z) {
+  FLX = 0.16 * Math.sin(TIME * 0.42 + z * 0.6) + 0.05 * Math.sin(TIME * 1.3 + x * 2.1 + y);
+  FLY = 0.02 * Math.sin(TIME * 0.7 + x);
+  FLZ = 0.07 * Math.cos(TIME * 0.31 + x * 0.8);
+  const dx = x - J.x, dy = y - J.y, dz = z - J.z, d2 = dx * dx + dy * dy + dz * dz;
+  if (d2 < 1.2) { const w = (1 - d2 / 1.2) ** 2 * 1.4; FLX += J.vx * w; FLY += J.vy * w; FLZ += J.vz * w; }
+}
+function chain(n, len) { return { n, len, P: new Float32Array(n * 3), Q: new Float32Array(n * 3), rest: null }; }
+function hang(C, x, y, z, dx, dy, dz) {
+  for (let i = 0; i < C.n; i++) {
+    const k = i * 3;
+    C.P[k] = C.Q[k] = x + dx * C.len * i; C.P[k + 1] = C.Q[k + 1] = y + dy * C.len * i; C.P[k + 2] = C.Q[k + 2] = z + dz * C.len * i;
+  }
+}
+function relax(C, x, y, z, dt, o) {
+  const P = C.P, Q = C.Q, n = C.n;
+  for (let i = 1; i < n; i++) {
+    const k = i * 3, s = i / (n - 1), px = P[k], py = P[k + 1], pz = P[k + 2];
+    const vx = px - Q[k], vy = py - Q[k + 1], vz = pz - Q[k + 2];
+    current(px, py, pz);
+    let ax = (FLX - vx / dt) * o.drag, ay = (FLY - vy / dt) * o.drag + o.lift, az = (FLZ - vz / dt) * o.drag;
+    if (C.rest) {
+      const st = o.stiff * (1 - s) * (1 - s) + o.hold;
+      ax += (C.rest[k] - px) * st; ay += (C.rest[k + 1] - py) * st; az += (C.rest[k + 2] - pz) * st;
+    }
+    Q[k] = px; Q[k + 1] = py; Q[k + 2] = pz;
+    P[k] = px + vx * 0.995 + ax * dt * dt; P[k + 1] = py + vy * 0.995 + ay * dt * dt; P[k + 2] = pz + vz * 0.995 + az * dt * dt;
+  }
+  P[0] = Q[0] = x; P[1] = Q[1] = y; P[2] = Q[2] = z;
+  const bx = J.x + J.ax * BELL_H * 0.3, by = J.y + J.ay * BELL_H * 0.3, bz = J.z + J.az * BELL_H * 0.3, br = BELL_R * 1.15;
+  for (let i = 1; i < n; i++) {
+    const k = i * 3, j = k - 3;
+    if (o.push) {
+      const ex = P[k] - bx, ey = P[k + 1] - by, ez = P[k + 2] - bz, ed = Math.hypot(ex, ey, ez);
+      if (ed < br && ed > 1e-5) { const f = br / ed; P[k] = bx + ex * f; P[k + 1] = by + ey * f; P[k + 2] = bz + ez * f; }
+    }
+    if (P[k + 1] < FLOOR_Y + 0.02) P[k + 1] = FLOOR_Y + 0.02;
+    const dx = P[k] - P[j], dy = P[k + 1] - P[j + 1], dz = P[k + 2] - P[j + 2];
+    const f = C.len / (Math.hypot(dx, dy, dz) || 1e-6);
+    P[k] = P[j] + dx * f; P[k + 1] = P[j + 1] + dy * f; P[k + 2] = P[j + 2] + dz * f;
+  }
+}
+
+// [tentacles]
+// Eighteen threads from the margin, heavier than water, trailing behind.
+// Now and then a stinging cell catches the light.
+const TENTS = 18, TENT_OPT = { drag: 2.2, lift: -0.9, stiff: 0, hold: 0, push: false };
+const tents = [], tentPhi = [];
+function drawTentacles(t) {
+  for (let k = 0; k < TENTS; k++) {
+    const P = tents[k].P, n = tents[k].n;
+    for (let i = 0; i < n - 1; i++) {
+      const j = i * 3, s = i / (n - 1);
+      line(P[j], P[j + 1], P[j + 2], P[j + 3], P[j + 4], P[j + 5], 0.14 + 0.4 * (1 - s), 4, 0, 0, LINE);
+      if ((i * 7 + k * 13 + ((t * 4) | 0)) % 31 === 0) plot(P[j], P[j + 1], P[j + 2], 0.95, 4, 43, 0, 0, LINE);
+    }
+  }
+}
+
+// [oral-arms]
+// Four frilled arms from the middle of the bell: tubes whose radius ripples
+// along their length, so the frills seem to crawl.
+const ARMS = 4, ARM_OPT = { drag: 2.6, lift: -0.25, stiff: 0, hold: 0, push: false };
+const arms = [];
+function drawArms(t) {
+  for (let a = 0; a < ARMS; a++) {
+    const P = arms[a].P, n = arms[a].n;
+    for (let i = 0; i < n - 1; i++) {
+      const j = i * 3;
+      let tx = P[j + 3] - P[j], ty = P[j + 4] - P[j + 1], tz = P[j + 5] - P[j + 2];
+      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      let ex = ty, ey = -tx, ez = 0;                             // t x (0,0,1)
+      if (Math.hypot(ex, ey) < 0.2) { ex = 0; ey = tz; ez = -ty; } // t x (1,0,0)
+      const el = Math.hypot(ex, ey, ez); ex /= el; ey /= el; ez /= el;
+      const fx = ty * ez - tz * ey, fy = tz * ex - tx * ez, fz = tx * ey - ty * ex;
+      for (let u = 0; u < 2; u++) {
+        const s = (i + u / 2) / (n - 1);
+        const cx = P[j] + (P[j + 3] - P[j]) * u / 2, cy = P[j + 1] + (P[j + 4] - P[j + 1]) * u / 2, cz = P[j + 2] + (P[j + 5] - P[j + 2]) * u / 2;
+        const r = 0.055 * (1 - 0.55 * s) * (1 + 0.4 * Math.sin(s * 16 - t * 2.2 + a * 1.7));
+        for (let m = 0; m < 8; m++) {
+          const g = m / 8 * TAU + s * 4, co = Math.cos(g), si = Math.sin(g);
+          const nx = ex * co + fx * si, ny = ey * co + fy * si, nz = ez * co + fz * si;
+          const x = cx + nx * r, y = cy + ny * r, z = cz + nz * r, f = fresnel(x, y, z, nx, ny, nz);
+          plot(x, y, z, 0.14 + 0.45 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.45 * f * f, 3, 0, 0.3, 0, SURFACE);
+        }
+      }
+    }
+  }
+}
+
+// [kelp]
+// Buoyant ribbons on stipes. Each blade twists as it climbs, is widest in
+// the middle, ruffles at the edge and carries a float every third node.
+const KELP_OPT = { drag: 1.8, lift: 1.1, stiff: 5, hold: 0.25, push: true };
+const ROCKS = [{ x: 1.7, z: -0.9, r: 0.7, h: 0.5, seed: 1.3 }, { x: -1.9, z: 0.8, r: 0.45, h: 0.32, seed: 4.1 }];
+const kelp = [];
+{
+  const R = rng(7);
+  while (kelp.length < 12) {
+    const a = R() * TAU, r = 1.0 + 1.6 * Math.sqrt(R());
+    const x = Math.cos(a) * r, z = Math.sin(a) * r * 0.85;
+    if (ROCKS.some(k => Math.hypot(x - k.x, z - k.z) < k.r * 0.9)) continue;
+    const n = 11 + ((R() * 5) | 0), C = chain(n, 0.16 + R() * 0.03), lx = (R() - 0.5) * 0.25, lz = (R() - 0.5) * 0.25;
+    C.rest = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const k = i * 3;
+      C.rest[k] = C.P[k] = C.Q[k] = x + lx * i * C.len;
+      C.rest[k + 1] = C.P[k + 1] = C.Q[k + 1] = FLOOR_Y + i * C.len * 0.97;
+      C.rest[k + 2] = C.P[k + 2] = C.Q[k + 2] = z + lz * i * C.len;
+    }
+    C.root = [x, FLOOR_Y, z]; C.twist = R() * TAU; C.width = 0.11 + R() * 0.07;
+    kelp.push(C);
+  }
+}
+function drawKelp(t) {
+  for (const K of kelp) {
+    const P = K.P, n = K.n;
+    for (let i = 0; i < n - 1; i++) {
+      const k = i * 3;
+      let tx = P[k + 3] - P[k], ty = P[k + 4] - P[k + 1], tz = P[k + 5] - P[k + 2];
+      const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+      const th = K.twist + i * 0.5 + 0.35 * Math.sin(t * 0.6 + i * 0.4), wx = Math.cos(th), wz = Math.sin(th);
+      let sx = ty * wz, sy = tz * wx - tx * wz, sz = -ty * wx;          // side = t x w
+      const sl = Math.hypot(sx, sy, sz) || 1; sx /= sl; sy /= sl; sz /= sl;
+      const nx = sy * tz - sz * ty, ny = sz * tx - sx * tz, nz = sx * ty - sy * tx;
+      const dl = Math.abs(nx * LX + ny * LY + nz * LZ);
+      let half = 0;
+      for (let a = 0; a < 3; a++) {
+        const u = a / 3, s = (i + u) / (n - 1);
+        const ox = P[k] + (P[k + 3] - P[k]) * u, oy = P[k + 1] + (P[k + 4] - P[k + 1]) * u, oz = P[k + 2] + (P[k + 5] - P[k + 2]) * u;
+        half = 0.025 + K.width * Math.sin(Math.PI * Math.min(1, s * 1.15)) ** 0.6 * (1 + 0.25 * Math.sin(s * 31 + t * 1.7 + K.twist));
+        for (let b = -5; b <= 5; b++) {
+          const off = b / 5 * half;
+          plot(ox + sx * off, oy + sy * off, oz + sz * off, 0.08 + 0.5 * dl + 0.12 * (1 - Math.abs(b) / 5), 5, 0, 0, 0.06, SURFACE);
+        }
+      }
+      line(P[k], P[k + 1], P[k + 2], P[k + 3], P[k + 4], P[k + 5], 0.45, 6, 0.06, 0, LINE);
+      if (i % 3 === 1) plot(P[k] + sx * (half + 0.03), P[k + 1] + sy * (half + 0.03), P[k + 2] + sz * (half + 0.03), 0.7, 6, 111, 0, 0, LINE);
+    }
+  }
+}
+
+// [seabed]
+// Rippled sand under moving caustics, with the jelly's shadow sliding over
+// it, and two lumpy rocks.
+function drawSand(t) {
+  const st = 0.05, x0 = Math.floor((cam.tx - 4) / st) * st, z0 = Math.floor((cam.tz - 4) / st) * st;
+  for (let a = 0; a < 160; a++) {
+    const x = x0 + a * st;
+    for (let b = 0; b < 160; b++) {
+      const z = z0 + b * st;
+      const y = FLOOR_Y + 0.025 * Math.sin(x * 7 + 0.6 * Math.sin(z * 2));
+      let c = (Math.sin(x * 4.1 + t * 0.9 + Math.sin(z * 3.3 + t * 0.5)) + Math.sin(z * 4.7 - t * 0.7 + Math.sin(x * 2.9 - t * 0.4))) * 0.25 + 0.5;
+      c = c * c * c;
+      const sx = x - J.x, sz = z - J.z, shade = 1 - 0.55 * Math.exp(-(sx * sx + sz * sz) * 5);
+      plot(x, y, z, (0.1 + 0.5 * c) * shade, 7, 0, 0, 0, SAND);
+    }
+  }
+}
+function drawRocks() {
+  for (const R of ROCKS) {
+    for (let i = 0; i <= 22; i++) {
+      const s = i / 22, a = s * Math.PI / 2;
+      for (let j = 0; j < 70; j++) {
+        const phi = j / 70 * TAU, bump = 1 + 0.12 * Math.sin(5 * phi + R.seed + 2 * s) * Math.sin(7 * s + 3 * phi);
+        const rho = R.r * Math.sin(a) * bump, y = R.h * Math.cos(a) * bump;
+        let nx = Math.cos(phi) * rho / (R.r * R.r), ny = y / (R.h * R.h), nz = Math.sin(phi) * rho / (R.r * R.r);
+        const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+        plot(R.x + Math.cos(phi) * rho, FLOOR_Y + y, R.z + Math.sin(phi) * rho, 0.06 + 0.55 * Math.max(0, nx * LX + ny * LY + nz * LZ), 8, 0, 0, 0, SURFACE);
+      }
+    }
+  }
+}
+
+// [snow]
+// Marine snow: flakes of nothing much, sinking and drifting with the swell.
+// Most are slanted streaks, some are specks, a few glint.
+const FLAKES = REDUCED ? 80 : 240, snow = new Float32Array(FLAKES * 4);
+{ const R = rng(31); for (let i = 0; i < FLAKES; i++) { snow[i * 4] = (R() - 0.5) * 6.4; snow[i * 4 + 1] = FLOOR_Y + R() * 3.7; snow[i * 4 + 2] = (R() - 0.5) * 6.4; snow[i * 4 + 3] = R(); } }
+function driftSnow(dt) {
+  for (let i = 0; i < FLAKES; i++) {
+    const k = i * 4;
+    current(snow[k], snow[k + 1], snow[k + 2]);
+    snow[k] += (FLX * 0.6 + 0.03) * dt; snow[k + 1] -= (0.05 + 0.05 * snow[k + 3]) * dt; snow[k + 2] += FLZ * 0.6 * dt;
+    if (snow[k + 1] < FLOOR_Y) snow[k + 1] += 3.7;
+    if (snow[k] - cam.tx > 3.2) snow[k] -= 6.4; else if (snow[k] - cam.tx < -3.2) snow[k] += 6.4;
+    if (snow[k + 2] - cam.tz > 3.2) snow[k + 2] -= 6.4; else if (snow[k + 2] - cam.tz < -3.2) snow[k + 2] += 6.4;
+  }
+}
+function drawSnow(t) {
+  for (let i = 0; i < FLAKES; i++) {
+    const k = i * 4, x = snow[k], y = snow[k + 1], z = snow[k + 2], r = snow[k + 3];
+    if (r < 0.7) plot(x, y, z, 0.16 + 0.14 * r, 9, r < 0.5 ? 47 : 39, 0, 0, SNOW);
+    else if (r < 0.92) plot(x, y, z, 0.3, 9, 46, 0, 0, SNOW);
+    else plot(x, y, z, 0.35 + 0.35 * Math.sin(t * 2 + i), 9, r > 0.97 ? 42 : 43, 0, 0, SNOW);
+  }
+}
+
+// [outline]
+// A surface cell whose neighbours are empty, or much farther away, is on a
+// silhouette. The side the solid neighbours are on picks the glyph.
+function solid(j, lim) { const k = kind[j]; return (k === SURFACE || k === LINE || k === EDGE) && depth[j] < lim; }
+function outline() {
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const i = y * COLS + x;
+    if (kind[i] !== SURFACE) continue;
+    const lim = depth[i] + 0.3;
+    const l = x > 0 && solid(i - 1, lim) ? 1 : 0, r = x < COLS - 1 && solid(i + 1, lim) ? 1 : 0;
+    const u = y > 0 && solid(i - COLS, lim) ? 1 : 0, d = y < ROWS - 1 && solid(i + COLS, lim) ? 1 : 0;
+    if (l && r && u && d) continue;
+    const gx = r - l, gy = d - u;
+    let ch;
+    if (!gx && !gy) { if (l && r) ch = 45; else if (u && d) ch = 124; else continue; }
+    else if (!gy) ch = 124;
+    else if (!gx) ch = gy > 0 ? 45 : 95;
+    else ch = gx * gy > 0 ? 47 : 92;
+    chr[i] = ch; kind[i] = EDGE; lum[i] = Math.min(1, lum[i] * 1.12 + 0.05);
+  }
+}
+
+// [palette]
+// Each material fades from deep to bright through three colours; brightness
+// picks one of LV steps. Cells are sorted by colour so each colour is set once.
+const LV = 12, RAMP = '.:-=+ioO08%B$@', SANDR = '..,,::;;~~==';
+const STOPS = [null,
+  [[38, 30, 78], [150, 120, 230], [214, 236, 255]],   // 1 bell
+  [[90, 20, 50], [255, 92, 150], [255, 214, 180]],    // 2 gonads
+  [[70, 24, 64], [226, 96, 168], [255, 190, 220]],    // 3 oral arms
+  [[40, 52, 92], [140, 186, 255], [230, 245, 255]],   // 4 tentacles, rim
+  [[22, 32, 20], [118, 142, 70], [214, 206, 132]],    // 5 kelp blade
+  [[30, 34, 22], [150, 140, 80], [230, 210, 140]],    // 6 stipe, floats
+  [[22, 28, 40], [86, 100, 124], [190, 205, 220]],    // 7 sand
+  [[30, 26, 34], [110, 96, 108], [196, 180, 176]],    // 8 rock
+  [[40, 48, 64], [120, 136, 164], [210, 220, 236]]];  // 9 snow
+const COLORS = [], GLYPH = [];
+for (let m = 0; m < STOPS.length; m++) for (let l = 0; l < LV; l++) {
+  if (!STOPS[m]) { COLORS.push('#000'); continue; }
+  const t = (l + 0.5) / LV, [a, b] = t < 0.5 ? [STOPS[m][0], STOPS[m][1]] : [STOPS[m][1], STOPS[m][2]], u = t < 0.5 ? t * 2 : t * 2 - 1;
+  COLORS.push(`rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * u)).join(',')})`);
+}
+for (let c = 0; c < 128; c++) GLYPH.push(String.fromCharCode(c));
+const counts = new Int32Array(STOPS.length * LV + 1);
+
+// [compose]
+let drawn = 0;
+function compose() {
+  const n = COLS * ROWS;
+  counts.fill(0); drawn = 0;
+  for (let i = 0; i < n; i++) {
+    const L = lum[i];
+    if (!mat[i] || L < 0.035) { bucket[i] = -1; continue; }
+    const b = mat[i] * LV + Math.min(LV - 1, (L * LV) | 0);
+    bucket[i] = b; counts[b + 1]++; drawn++;
+  }
+  for (let b = 1; b < counts.length; b++) counts[b] += counts[b - 1];
+  const fill = counts.slice();
+  for (let i = 0; i < n; i++) if (bucket[i] >= 0) order[fill[bucket[i]]++] = i;
+  tctx.setTransform(1, 0, 0, 1, 0, 0);
+  tctx.clearRect(0, 0, txt.width, txt.height);
+  tctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  tctx.font = FONT + 'px ' + MONO; tctx.textBaseline = 'top';
+  for (let b = 0; b < counts.length - 1; b++) {
+    if (counts[b] === counts[b + 1]) continue;
+    tctx.fillStyle = COLORS[b];
+    for (let o = counts[b]; o < counts[b + 1]; o++) {
+      const i = order[o], L = lum[i];
+      let g = chr[i];
+      const s = g ? GLYPH[g] : kind[i] === SAND ? SANDR[Math.min(SANDR.length - 1, (L * 1.6 * SANDR.length) | 0)] : RAMP[Math.min(RAMP.length - 1, (L * RAMP.length) | 0)];
+      tctx.fillText(s, OX + (i % COLS) * CW, OY + ((i / COLS) | 0) * CH);
+    }
+  }
+}
+// Glow is the glyph layer shrunk and stretched back: free blur, any browser.
+function present() {
+  vctx.setTransform(1, 0, 0, 1, 0, 0);
+  vctx.globalCompositeOperation = 'source-over'; vctx.globalAlpha = 1;
+  const g = vctx.createLinearGradient(0, 0, 0, view.height);
+  g.addColorStop(0, '#08101e'); g.addColorStop(0.55, '#04070d'); g.addColorStop(1, '#020305');
+  vctx.fillStyle = g; vctx.fillRect(0, 0, view.width, view.height);
+  const s = vctx.createRadialGradient(view.width * 0.55, -view.height * 0.1, 0, view.width * 0.55, -view.height * 0.1, view.height * 0.9);
+  s.addColorStop(0, 'rgba(70,110,170,0.16)'); s.addColorStop(1, 'rgba(70,110,170,0)');
+  vctx.fillStyle = s; vctx.fillRect(0, 0, view.width, view.height);
+  bctx.clearRect(0, 0, bloom.width, bloom.height); bctx.drawImage(txt, 0, 0, bloom.width, bloom.height);
+  hctx.clearRect(0, 0, haze.width, haze.height); hctx.drawImage(bloom, 0, 0, haze.width, haze.height);
+  vctx.imageSmoothingEnabled = true;
+  vctx.globalCompositeOperation = 'lighter';
+  vctx.globalAlpha = 0.6; vctx.drawImage(haze, 0, 0, view.width, view.height);
+  vctx.globalAlpha = 0.7; vctx.drawImage(bloom, 0, 0, view.width, view.height);
+  vctx.globalAlpha = 1; vctx.globalCompositeOperation = 'source-over';
+  vctx.drawImage(txt, 0, 0);
+}
+
+// [loop]
+function simulate(dt) {
+  TIME += dt;
+  swim(dt);
+  for (let a = 0; a < ARMS; a++) {
+    const g = a / ARMS * TAU; toWorld(Math.cos(g) * 0.06, BELL_H * 0.05, Math.sin(g) * 0.06);
+    relax(arms[a], WX, WY, WZ, dt, ARM_OPT);
+  }
+  for (let k = 0; k < TENTS; k++) {
+    bellLocal(1, tentPhi[k], J.c, TIME); toWorld(BL[0], BL[1], BL[2]);
+    relax(tents[k], WX, WY, WZ, dt, TENT_OPT);
+  }
+  for (const K of kelp) relax(K, K.root[0], K.root[1], K.root[2], dt, KELP_OPT);
+  driftSnow(dt);
+}
+function render() {
+  depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
+  setCamera(TIME);
+  drawSand(TIME); drawRocks(); drawKelp(TIME);
+  drawBell(TIME); drawGonads(); drawArms(TIME); drawTentacles(TIME);
+  drawSnow(TIME); outline(); compose(); present();
+}
+swim(0);
+for (let a = 0; a < ARMS; a++) {
+  arms.push(chain(11, 0.07));
+  const g = a / ARMS * TAU; toWorld(Math.cos(g) * 0.06, BELL_H * 0.05, Math.sin(g) * 0.06);
+  hang(arms[a], WX, WY, WZ, 0, -1, 0);
+}
+for (let k = 0; k < TENTS; k++) {
+  tentPhi.push(k / TENTS * TAU + 0.05); tents.push(chain(20, 0.07));
+  bellLocal(1, tentPhi[k], 0, 0); toWorld(BL[0], BL[1], BL[2]);
+  hang(tents[k], WX, WY, WZ, 0, -1, 0);
+}
+resize();
+new ResizeObserver(resize).observe(stage);
+if (document.fonts) document.fonts.ready.then(resize);
+const hud = { hz: document.getElementById('hz'), spd: document.getElementById('spd'), chars: document.getElementById('chars'), dep: document.getElementById('dep') };
+let last = performance.now(), acc = 0, frame = 0;
+for (let i = 0; i < 240; i++) simulate(STEP);   // let the water settle before the first frame
+function tick(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!paused) { acc += dt * (REDUCED ? 0.6 : 1); while (acc >= STEP) { simulate(STEP); acc -= STEP; } }
+  render();
+  if (frame++ % 8 === 0) {
+    hud.hz.textContent = J.hz.toFixed(1);
+    hud.spd.textContent = Math.hypot(J.vx, J.vy, J.vz).toFixed(2);
+    hud.chars.textContent = drawn;
+    hud.dep.textContent = (9 + (1 - J.y) * 2.5).toFixed(1);
+  }
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// [input]
+// Drag to orbit, tap to startle: a startled jelly beats faster and harder.
+let grab = null;
+stage.addEventListener('pointerdown', e => { grab = { x: e.clientX, y: e.clientY, moved: 0 }; stage.setPointerCapture(e.pointerId); });
+stage.addEventListener('pointermove', e => {
+  if (!grab) return;
+  const dx = e.clientX - grab.x, dy = e.clientY - grab.y;
+  grab.moved += Math.abs(dx) + Math.abs(dy); grab.x = e.clientX; grab.y = e.clientY;
+  cam.dyaw -= dx * 0.006; cam.dpitch = clamp(cam.dpitch + dy * 0.004, -0.35, 0.95);
+});
+stage.addEventListener('pointerup', () => { if (grab && grab.moved < 6) J.startle = 1; grab = null; });
+stage.addEventListener('pointercancel', () => { grab = null; });
+stage.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') cam.dyaw += 0.08; else if (e.key === 'ArrowRight') cam.dyaw -= 0.08;
+  else if (e.key === 'ArrowUp') cam.dpitch = clamp(cam.dpitch + 0.06, -0.35, 0.95);
+  else if (e.key === 'ArrowDown') cam.dpitch = clamp(cam.dpitch - 0.06, -0.35, 0.95);
+  else if (e.key === ' ') J.startle = 1; else return;
+  e.preventDefault();
+});
+window.jelly = { setPaused(v) { paused = v; } };
+</script>
+
+<script>
+// Source panel: shows the scene script above, one section at a time.
+(() => {
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const src = document.getElementById('scene').textContent.replace(/^\s*\n/, '').replace(/\s+$/, '');
+  const lines = src.split('\n');
+  const code = document.getElementById('code'), chips = document.getElementById('chips'), bar = document.getElementById('bar');
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const TOK = /\b(const|let|function|return|for|if|else|while|of|new|true|false|null|continue)\b|(\b\d+(?:\.\d+)?\b)/g;
+  const paint = l => {
+    const c = l.indexOf('//'), body = c < 0 ? l : l.slice(0, c), note = c < 0 ? '' : l.slice(c);
+    return esc(body).replace(TOK, (m, k, n) => k ? `<span class="k">${k}</span>` : `<span class="n">${n}</span>`) +
+      (note ? `<span class="c">${esc(note)}</span>` : '');
+  };
+  const rows = lines.map((l, i) => {
+    const d = document.createElement('div');
+    d.className = 'ln';
+    d.innerHTML = `<span class="no">${i + 1}</span><span>${paint(l) || ' '}</span>`;
+    code.appendChild(d);
+    return d;
+  });
+  const secs = [];
+  lines.forEach((l, i) => { const m = l.match(/^\/\/ \[([\w-]+)\]/); if (m) secs.push({ name: m[1], at: i }); });
+  secs.forEach((s, i) => {
+    s.end = i + 1 < secs.length ? secs[i + 1].at : lines.length;
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = s.name; b.setAttribute('role', 'tab');
+    b.addEventListener('click', () => show(i, true));
+    chips.appendChild(b); s.btn = b;
+  });
+  const DWELL = 9;
+  let cur = -1, since = 0, hold = 0;
+  function show(i, byHand) {
+    if (cur >= 0) { const o = secs[cur]; o.btn.classList.remove('on'); o.btn.setAttribute('aria-selected', 'false'); for (let r = o.at; r < o.end; r++) rows[r].classList.remove('on'); }
+    cur = i; since = 0; if (byHand) hold = 25;
+    const s = secs[i];
+    s.btn.classList.add('on'); s.btn.setAttribute('aria-selected', 'true');
+    for (let r = s.at; r < s.end; r++) rows[r].classList.add('on');
+    code.scrollTo({ top: rows[s.at].offsetTop - 4, behavior: REDUCED ? 'auto' : 'smooth' });
+    chips.scrollTo({ left: s.btn.offsetLeft - chips.offsetLeft - 24, behavior: REDUCED ? 'auto' : 'smooth' });
+  }
+  const pauseUser = () => { hold = 25; };
+  code.addEventListener('wheel', pauseUser, { passive: true });
+  code.addEventListener('touchstart', pauseUser, { passive: true });
+  let last = performance.now();
+  (function tick(now) {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    if (hold > 0) hold -= dt; else if ((since += dt) > DWELL) show((cur + 1) % secs.length);
+    bar.style.width = ((cur + Math.min(1, since / DWELL)) / secs.length * 100) + '%';
+    requestAnimationFrame(tick);
+  })(last);
+  show(Math.max(0, secs.findIndex(s => s.name === 'swimmer')));
+
+  const panel = document.getElementById('panel'), showBtn = document.getElementById('showSrc');
+  document.getElementById('hideSrc').addEventListener('click', () => { panel.hidden = true; showBtn.hidden = false; showBtn.focus(); });
+  showBtn.addEventListener('click', () => { panel.hidden = false; showBtn.hidden = true; });
+  const pauseBtn = document.getElementById('pause');
+  pauseBtn.addEventListener('click', () => {
+    const p = pauseBtn.textContent === 'Pause';
+    window.jelly.setPaused(p); pauseBtn.textContent = p ? 'Play' : 'Pause';
+  });
+  showBtn.addEventListener('pointerdown', e => e.stopPropagation());
+})();
+</script>
+
+</body>
+</html>
