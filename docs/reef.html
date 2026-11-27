@@ -180,7 +180,7 @@ function resize() {
   W = Math.max(1, r.width); H = Math.max(1, r.height); DPR = Math.min(2, window.devicePixelRatio || 1);
   view.width = txt.width = Math.round(W * DPR); view.height = txt.height = Math.round(H * DPR);
   bloom.width = Math.max(1, Math.round(W / 4)); bloom.height = Math.max(1, Math.round(H / 4));
-  FONT = 15 * Math.pow(0.4, (DETAIL - 1) / 19);   // the Detail slider sets the cell size: 15px coarse, 6px fine
+  FONT = 15 * Math.pow(0.229, (DETAIL - 1) / 19);   // the Detail slider sets the cell size: 15px coarse, 3.4px fine
   tctx.font = Math.round(FONT * DPR) + 'px ' + MONO;
   CW = Math.max(2, Math.round(tctx.measureText('M').width)); CH = Math.round(FONT * DPR * 1.25);
   COLS = Math.max(1, Math.floor(view.width / CW)); ROWS = Math.max(1, Math.floor(view.height / CH));
@@ -2190,7 +2190,7 @@ function compose() {
     if (!mat[i]) { bucket[i] = -1; continue; }
     const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3) : lum[i];
     if (vis < 0.05) { bucket[i] = -1; continue; }
-    lum[i] = ENV.cast && kind[i] !== GROUND ? Math.min(1, vis * 1.35 + 0.22) : vis;
+    lum[i] = ENV.boost && kind[i] !== GROUND ? Math.min(1, vis * 1.35 + 0.22) : vis;
     const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
     bucket[i] = b; counts[b + 1]++; drawn++;
   }
@@ -2338,19 +2338,19 @@ const SCENES = {
       for (const k in LOOKS) for (let i = 0; i < LOOKS[k].n; i++) {
         const L = LOOKS[k], b = bommies[(i * 3 + k.length) % bommies.length];
         const o = makeSwimmer(KINDS.fish, { route: fishRoute(b.x, b.z, b.r + 0.6 + R(), FLOOR + b.h + 0.25 + R() * 0.3, R), base: L.speed, start: R(), seed: R() * 9 });
-        o.look = L; o.scale = L.scale * (0.85 + R() * 0.3); o.freq = 1.2 / Math.sqrt(o.scale); animals.push(o);
+        o.look = L; o.scale = L.scale * 1.6 * (0.85 + R() * 0.3); o.freq = 1.2 / Math.sqrt(o.scale); animals.push(o);
       }
       const sh = (n, seed, mat, at, small, spread, roam) => makeShoal({ n, seed, mat, at, small, roam: roam || [1.2, 0.15, 0.8], drift: 0.12, spread, jitter: 0.08 });
       const shoals = [], kinds = [[22, true, 50], [23, true, 40], [24, false, 10], [55, false, 12], [56, false, 8], [57, true, 30], [31, false, 14]];
       for (let i = 0; i < 16; i++) {
         const [m, small, n] = kinds[i % kinds.length], b = bommies[i % bommies.length];
-        shoals.push(sh(n, 200 + i, m, [b.x + (R() - 0.5) * 2, FLOOR + b.h + 0.3 + R() * 0.5, b.z + (R() - 0.5) * 2], small, small ? [1.0, 0.4, 1.0] : [2.4, 0.5, 1.6], [1 + R() * 1.5, 0.15, 0.8 + R()]));
+        shoals.push(sh(Math.round(n * 0.6), 200 + i, m, [b.x + (R() - 0.5) * 2, FLOOR + b.h + 0.3 + R() * 0.5, b.z + (R() - 0.5) * 2], false, small ? [1.0, 0.4, 1.0] : [2.4, 0.5, 1.6], [1 + R() * 1.5, 0.15, 0.8 + R()]));
       }
       const M = makeMeadow(2600, 9, -17, 17, -13, 8, 0.18, 0.4), keep = [];
       for (let i = 0; i < M.n; i++) if (seagrassAt(M.x[i], M.z[i])) keep.push(i);
       for (const f of ['x', 'z', 'h', 'ph', 'az', 'tone']) M[f] = M[f].constructor.from(keep, i => M[f][i]);
       M.n = keep.length;
-      ENV = { rocks: [], tufts: [], meadow: M, corals, critters: makeCritters(31, bommies), stars: [], cast: true, noSurface: true, cull: [10, 7.5], sandSpan: 10, sandStep: 0.12, shoals };
+      ENV = { rocks: [], tufts: [], meadow: M, corals, critters: makeCritters(31, bommies), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', view: { half: 0.5, side: 0.95, pitch: 0.06 }, bands: DOLPHIN_BANDS,
     build() {
@@ -2359,7 +2359,7 @@ const SCENES = {
       ENV = { rocks: makeRocks(4, 41), tufts: [], meadow: null, corals: [], shoals: [], stars: [], sandMat: 13, sandStep: 0.14, sandGain: 0.8,
               anems: [makeAnemone(0, -0.3, 44, 11, 0.95), makeAnemone(2.6, -2.0, 22, 12, 0.75), makeAnemone(-2.7, -1.8, 22, 13, 0.7), makeAnemone(-1.4, 2.2, 16, 14, 0.6)] };
     } },
-  turtle: { rate: 'stroke', tag: 'chelonia mydas', tap: 'tap: an extra stroke', view: { yaw: -Math.PI / 2 + 0.22, half: 0.5, side: 0.85, pitch: 0.36 }, bands: DOLPHIN_BANDS,
+  turtle: { rate: 'stroke', tag: 'chelonia mydas', tap: 'tap: an extra stroke', view: { yaw: -Math.PI / 2 + 0.22, half: 0.85, side: 1.45, pitch: 0.85 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
       animals = [makeSwimmer(KINDS.turtle, { route: TURTLE_ROUTE, base: 0.42, start: 0 })];
@@ -2457,11 +2457,10 @@ stage.addEventListener('keydown', e => {
 window.scene = { setPaused(v) { paused = v; } };
 const detail = document.getElementById('detail');
 for (const b of document.querySelectorAll('[data-sc]')) b.addEventListener('click', () => setScene(b.dataset.sc));
-try { const v = +localStorage.getItem('reef.detail2'); if (v >= 1 && v <= 20) { DETAIL = v; resize(); } } catch (e) {}
 detail.value = DETAIL;
 detail.addEventListener('input', () => {
   DETAIL = +detail.value; resize();
-  try { localStorage.setItem('reef.detail2', String(DETAIL)); } catch (e) {}
+  
 });
 document.getElementById('ctrl').addEventListener('pointerdown', e => e.stopPropagation());
 const app = document.querySelector('.app'), fsBtn = document.getElementById('full');
