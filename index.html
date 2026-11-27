@@ -1894,22 +1894,23 @@ function drawColony(c, t, ppu) {
 // fish: groupers hanging by the bommies, parrotfish and a pair of
 // butterflyfish cruising between them. Each knows how to move and how to
 // draw itself.
-function makeCritters(seed, bommies) {
+function makeCritters(seed, bommies, near, many) {
   const R = rng(seed), out = [];
-  const sandSpot = () => { let x, z, n = 0; do { x = -14 + R() * 28; z = -10.5 + R() * 15; } while (ground(x, z) > FLOOR + 0.02 && n++ < 40); return [x, z]; };
+  // on open sand, and, when given, close to where the camera passes, so you meet them
+  const sandSpot = () => { let x, z, n = 0; do { if (near) [x, z] = near(); else { x = -14 + R() * 28; z = -10.5 + R() * 15; } } while ((ground(x, z) > FLOOR + 0.02 || (TOPS && topAt(x, z) > FLOOR + 0.05)) && n++ < 60); return [x, z]; };
   const byBommie = (b, out_) => { const a = R() * TAU, d = b.r * (out_ || 0.95); return [b.x + Math.cos(a) * d, b.z + Math.sin(a) * d, a]; };
   for (let i = 0; i < 3; i++) {                          // morays in holes in the bommie sides
     const b = bommies[(i * 5 + 2) % bommies.length], [x, z, a] = byBommie(b, 0.7);
     out.push({ type: 'moray', x, z, y: ground(x, z) + 0.1, a: a, out: 0.4, ph: R() * TAU, m: i === 1 ? 99 : 91 });
   }
-  for (let i = 0; i < 7; i++) { const [x, z] = sandSpot(); out.push({ type: 'crab', x, z, x0: x, z0: z, h: R() * TAU, ph: R() * TAU, size: 0.06 + R() * 0.04, m: R() < 0.6 ? 92 : 44 }); }
-  for (let i = 0; i < 2; i++) {
-    const b = bommies[(i * 7 + 4) % bommies.length], [x, z, a] = byBommie(b, 1.05);
-    out.push({ type: 'lobster', x0: x, z0: z, a: a + Math.PI, s: 0, ph: R() * TAU, m: i ? 94 : 93 });
+  for (let i = 0; i < 7; i++) { const [x, z] = sandSpot(); out.push({ k: many ? 1.6 : 1, type: 'crab', x, z, x0: x, z0: z, h: R() * TAU, ph: R() * TAU, size: 0.06 + R() * 0.04, m: R() < 0.6 ? 92 : 44 }); }
+  for (let i = 0; i < (many ? 6 : 2); i++) {
+    const [x, z] = many ? sandSpot() : byBommie(bommies[(i * 7 + 4) % bommies.length], 1.05), a = R() * TAU;
+    out.push({ type: 'lobster', x0: x, z0: z, a, s: 0, ph: R() * TAU, m: i % 2 ? 94 : 93, k: many ? 1.8 : 1 });
   }
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < (many ? 30 : 18); i++) {
     const [x, z] = sandSpot(), kind = pick3(R);
-    out.push({ type: 'star', x, z, rot: R() * TAU, kind, m: kind === 0 ? 95 : kind === 1 ? 81 : 96, ph: R() * TAU });
+    out.push({ type: 'star', x, z, rot: R() * TAU, kind, m: kind === 0 ? 95 : kind === 1 ? 81 : 96, ph: R() * TAU, k: many ? 1.9 : 1 });
   }
   for (let i = 0; i < 6; i++) { const [x, z] = sandSpot(); out.push({ type: 'cucumber', x, z, h: R() * TAU, ph: R() * TAU, len: 0.3 + R() * 0.2, m: 97 }); }
   return out;
@@ -1941,6 +1942,7 @@ function drawCritters(t) {
   for (let ki = 0; ki < CR.length; ki++) {
     const c = CR[ki];
     if (!keep(ki)) continue;
+    SCX = c.x !== undefined ? c.x : c.x0; SCY = FLOOR; SCZ = c.z !== undefined ? c.z : c.z0; SCK = c.k || 1;
     const cx = c.x !== undefined ? c.x : c.x0, cz = c.z !== undefined ? c.z : c.z0;
     if (Math.abs(cx - TX) > 9 || Math.abs(cz - TZ) > 7 || !project(cx, FLOOR + 0.1, cz)) continue;
     const ppu = FOC / PZ;
@@ -2016,7 +2018,7 @@ function drawCritters(t) {
       }
     }
   }
-  SNX = SNY = 0;
+  SNX = SNY = 0; SCK = 1;
 }
 
 // [reef-fish]
@@ -2575,7 +2577,7 @@ const SCENES = {
       for (let i = 0; i < M.n; i++) if (seagrassAt(M.x[i], M.z[i])) keep.push(i);
       for (const f of ['x', 'z', 'h', 'ph', 'az', 'tone']) M[f] = M[f].constructor.from(keep, i => M[f][i]);
       M.n = keep.length;
-      ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
+      ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
     build() {
