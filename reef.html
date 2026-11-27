@@ -22,6 +22,7 @@
 html, body { height: 100%; }
 body { background: var(--sea); color: var(--ink); font-family: var(--mono); overflow: hidden; }
 .app { height: 100%; display: flex; flex-direction: column; }
+.stage, .app { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .stage { position: relative; flex: 1 1 auto; min-height: 0; touch-action: none; cursor: grab; outline: none; }
 .stage:active { cursor: grabbing; }
 .stage:focus-visible { box-shadow: inset 0 0 0 1px var(--faint); }
@@ -200,7 +201,7 @@ function setCamera(dt) {
   cam.head += dh * (1 - Math.exp(-dt * 2.2));
   TX = A.cx; TY = A.cy; TZ = A.cz;
   const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0)) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
-  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.0, 1.2);
+  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.4, 1.3);
   const dist = VIEW.dist || cam.dist;
   CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
   CY = TY + dist * Math.sin(pitch);
@@ -933,8 +934,8 @@ function drawManta(o) {
   // the whip of a tail
   let px = 0, py = 0, pz = 0;
   for (let k = 0; k <= 10; k++) {
-    const u = k / 10; toWorld(o, -0.5 - 0.95 * u, -0.01 + 0.03 * Math.sin(ph * 2 - u * 4), 0.04 * Math.sin(ph - u * 3));
-    if (k) line(px, py, pz, WX, WY, WZ, 0.55, 29, 0);
+    const u = k / 10; toWorld(o, -0.48 - 1.25 * u, -0.01 + 0.03 * Math.sin(ph * 2 - u * 4), 0.04 * Math.sin(ph - u * 3));
+    if (k) tube(px, py, pz, WX, WY, WZ, 0.03 * (1 - 0.8 * (u - 0.1)), 0.03 * (1 - 0.8 * u), 0.55, 29, ppu);
     px = WX; py = WY; pz = WZ;
   }
 }
@@ -2509,12 +2510,12 @@ const SCENES = {
       ENV = { rocks: makeRocks(6, 14), tufts: [], meadow: makeMeadow(350, 15, -7, 7, -4, 2.5, 0.2, 0.45), corals: makeCorals('garden', 16), stars: makeStars(6, 17),
               shoals: [makeShoal({ n: 30, seed: 27, mat: 23, at: [-1, -1.1, -0.5], small: true, roam: [1.5, 0.2, 1], drift: 0.08, spread: [1, 0.4, 0.8], jitter: 0.05 })] };
     } },
-  manta: { rate: 'wingbeat', tag: 'mobula birostris', tap: 'tap: an extra wingbeat', view: { yaw: -Math.PI / 2 + 0.22, half: 0.75, side: 1.3, pitch: 0.34 }, bands: DOLPHIN_BANDS,
+  manta: { rate: 'wingbeat', tag: 'mobula birostris', tap: 'tap: an extra wingbeat', view: { yaw: -Math.PI / 2 + 0.35, dist: 2.0, half: 0.85, side: 1.45, pitch: -1.3 }, bands: DOLPHIN_BANDS,
     build() {
       HM = makeMounds(31, 5);
       animals = [makeSwimmer(KINDS.manta, { route: MANTA_ROUTE, base: 0.9, start: 0 })];
       const rocks = makeRocks(3, 18);
-      ENV = { rocks, tufts: makeTufts(16, rocks, 19), meadow: null, corals: makeCorals('bommie', 20), stars: makeStars(4, 21),
+      ENV = { rocks, tufts: makeTufts(16, rocks, 19), meadow: makeMeadow(1400, 32, -7, 7, -5, 3, 0.45, 1.0), corals: makeCorals('bommie', 20), stars: makeStars(4, 21),
               shoals: [makeShoal({ n: 40, seed: 28, mat: 23, at: [0, -0.9, -1], small: true, roam: [2, 0.3, 1.2], drift: 0.07, spread: [1.2, 0.5, 1], jitter: 0.05 })] };
     } } };
 let animals = [], current = '', VIEW = SCENES.dolphins.view;
