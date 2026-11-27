@@ -201,7 +201,7 @@ function setCamera(dt) {
   cam.head += dh * (1 - Math.exp(-dt * 2.2));
   TX = A.cx; TY = A.cy; TZ = A.cz;
   const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0)) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
-  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.4, 1.52);   // up to almost straight down
+  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.53, 1.53);   // up to almost straight down
   const dist = VIEW.dist || cam.dist;
   CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
   CY = TY + dist * Math.sin(pitch);
@@ -2093,7 +2093,7 @@ function dolphinDirector(dt) {
   L.prevHY = hy;
   const t = L.landT === undefined ? -1 : TIME - L.landT;
   let side = 40;
-  if (t >= 0 && t < 7) side = t < 1.4 ? 5 - 4.62 * smooth(0, 1.4, t) : t < 4.4 ? 0.38 - 0.06 * Math.sin((t - 1.4) / 3 * Math.PI) : 0.38 + 9 * smooth(4.4, 7, t);
+  if (t >= 0 && t < 7) side = t < 1.4 ? 5 - 4.15 * smooth(0, 1.4, t) : t < 4.4 ? 0.85 - 0.15 * Math.sin((t - 1.4) / 3 * Math.PI) : 0.85 + 9 * smooth(4.4, 7, t);
   V.side = side; V.up = 0.04; V.d = L.d - 0.3 + (t >= 0 && t < 4.4 ? 0.12 * smooth(1.4, 2.9, t) : 0);
   if (t >= 2.9 && t < 2.9 + dt * 1.5) { L.exhale = 1.6; V.exhale = 1.6; }
 }
@@ -2617,15 +2617,15 @@ stage.addEventListener('pointermove', e => {
   if (!grab) return;
   const dx = e.clientX - grab.x, dy = e.clientY - grab.y;
   grab.moved += Math.abs(dx) + Math.abs(dy); grab.x = e.clientX; grab.y = e.clientY;
-  cam.dyaw -= dx * 0.006; cam.dpitch = clamp(cam.dpitch + dy * 0.004, -1.0, 1.0);
+  cam.dyaw -= dx * 0.006; cam.dpitch = clamp(cam.dpitch + dy * 0.004, -1.53 - VIEW.pitch, 1.53 - VIEW.pitch);
 });
 stage.addEventListener('pointerup', () => { if (grab && grab.moved < 6) animals[0].kind.poke(animals[0]); grab = null; });
 stage.addEventListener('pointercancel', () => { grab = null; });
 stage.addEventListener('keydown', e => {
   if (e.target !== stage) return;
   if (e.key === 'ArrowLeft') cam.dyaw += 0.1; else if (e.key === 'ArrowRight') cam.dyaw -= 0.1;
-  else if (e.key === 'ArrowUp') cam.dpitch = clamp(cam.dpitch + 0.06, -1.0, 1.0);
-  else if (e.key === 'ArrowDown') cam.dpitch = clamp(cam.dpitch - 0.06, -1.0, 1.0);
+  else if (e.key === 'ArrowUp') cam.dpitch = clamp(cam.dpitch + 0.06, -1.53 - VIEW.pitch, 1.53 - VIEW.pitch);
+  else if (e.key === 'ArrowDown') cam.dpitch = clamp(cam.dpitch - 0.06, -1.53 - VIEW.pitch, 1.53 - VIEW.pitch);
   else if (e.key === ' ') animals[0].kind.poke(animals[0]); else return;
   e.preventDefault();
 });
