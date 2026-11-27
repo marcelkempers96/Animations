@@ -209,7 +209,7 @@ function setCamera(dt) {
   cam.head += dh * (1 - Math.exp(-dt * 2.2));
   TX = A.cx; TY = A.cy; TZ = A.cz;
   const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0)) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
-  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.4, 1.3);
+  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.4, 1.52);   // up to almost straight down
   const dist = VIEW.dist || cam.dist;
   CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
   CY = TY + dist * Math.sin(pitch);
@@ -1141,8 +1141,17 @@ function swimDancer(o, dt) {
   o.freq = 1.6 + L.burst; o.amp = 1.1; o.phase += TAU * o.freq * dt;
   o.d = L.d - 0.55 + 0.2 * Math.sin(TIME * 0.7); o.speed = L.speed;
   ride(o, 0, 0.4);
+  for (let i = 0; i < 9; i++) o.F[i] *= o.scale || 1;          // the mate is a little smaller
   const a = TIME * 1.2, side = 0.38 * Math.sin(a), up = 0.2 * Math.cos(a * 1.3), F = o.F;
   o.cx += F[6] * side + F[3] * up; o.cy += F[7] * side + F[4] * up; o.cz += F[8] * side + F[5] * up;
+  // never into each other: keep a body length and a bit between them
+  o.cy = Math.max(o.cy, FLOOR + 0.82);                         // never down into the anemone's mouth
+  let vx = o.cx - L.cx, vy = o.cy - L.cy, vz = o.cz - L.cz;
+  const need = 1.35, dd = Math.hypot(vx, vy, vz);
+  if (dd < need) {                                              // and never into each other: open the gap sideways
+    const h = Math.hypot(vx, vz) || 1e-3, hh = Math.sqrt(Math.max(0, need * need - vy * vy));
+    o.cx = L.cx + vx / h * hh; o.cz = L.cz + vz / h * hh;
+  }
 }
 function makeAnemone(x, z, n, seed, scale) {
   const R = rng(seed), arms = [];
@@ -1176,12 +1185,24 @@ function drawAnemones(t, dt) {
         const bend = s ** 1.5;
         let nx = px + dx * seg + a.bx * bend / N * 3, ny = py + dy * seg + a.by * bend / N * 3, nz = pz + dz * seg + a.bz * bend / N * 3;
         // the fish: an ellipsoid the arm may not enter
-        for (const F of fl) {
-          const ex = nx - F.cx, ey = ny - F.cy, ez = nz - F.cz, sc = F.scale || 1, ed = Math.hypot(ex * 0.72, ey * 1.55, ez * 1.55) / sc;
-          if (ed < 0.44 && ed > 1e-4) {
-            const f = (0.44 - ed) / ed;
-            nx += ex * f * 0.9; ny += ey * f * 0.9; nz += ez * f * 0.9;
-            tx += ex * f; ty += ey * f; tz += ez * f; touched = 1;
+        for (let it = 0; it < 4; it++) for (const F of fl) {   // a few passes, so an arm caught between both fish ends up clear of both
+          // the fish as a solid: an ellipsoid in its own frame, long enough for the tail,
+          // tall enough for the fins, wide enough for the arm's own thickness
+          const sc = F.scale || 1, G = F.F, ux = nx - F.cx, uy = ny - F.cy, uz = nz - F.cz;
+          const gx = Math.hypot(G[0], G[1], G[2]) || 1, gy = Math.hypot(G[3], G[4], G[5]) || 1, gz = Math.hypot(G[6], G[7], G[8]) || 1;
+          const lx = (ux * G[0] + uy * G[1] + uz * G[2]) / gx / sc + 0.12, ly = (ux * G[3] + uy * G[4] + uz * G[5]) / gy / sc, lz = (ux * G[6] + uy * G[7] + uz * G[8]) / gz / sc;
+          const ed = Math.hypot(lx / 0.78, ly / 0.42, lz / 0.26);
+          if (ed < 1 && ed > 1e-4) {
+            // out to the skin on the side the arm came from, never through to the far side
+            const qx = px - F.cx, qy = py - F.cy, qz = pz - F.cz;
+            let ax = (qx * G[0] + qy * G[1] + qz * G[2]) / gx / sc + 0.12, ay = (qx * G[3] + qy * G[4] + qz * G[5]) / gy / sc, az = (qx * G[6] + qy * G[7] + qz * G[8]) / gz / sc;
+            if (ax * lx + ay * ly + az * lz < 0.2 * Math.hypot(ax, ay, az) * Math.hypot(lx, ly, lz)) { ax = (ax + lx) * 0.5; ay = (ay + ly) * 0.5; az = (az + lz) * 0.5; }
+            else { ax = lx; ay = ly; az = lz; }
+            const ea = Math.hypot(ax / 0.78, ay / 0.42, az / 0.26) || 1e-3, k2 = 1.08 / ea;
+            const px_ = ax * k2 - lx, py_ = ay * k2 - ly, pz_ = az * k2 - lz;
+            const dx_ = (G[0] / gx * px_ + G[3] / gy * py_ + G[6] / gz * pz_) * sc, dy_ = (G[1] / gx * px_ + G[4] / gy * py_ + G[7] / gz * pz_) * sc, dz_ = (G[2] / gx * px_ + G[5] / gy * py_ + G[8] / gz * pz_) * sc;
+            nx += dx_; ny += dy_; nz += dz_;
+            tx += dx_ * 2.5; ty += dy_ * 2.5; tz += dz_ * 2.5; touched = 1;
           }
         }
         if (ny < BY + 0.03) ny = BY + 0.03;
