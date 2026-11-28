@@ -516,6 +516,23 @@ function swimDolphin(o, dt) {
     pathAt(o.path, o.d - i / (SP - 1) * BODY);
     BP[i * 3] = QX; BP[i * 3 + 1] = QY; BP[i * 3 + 2] = QZ;
   }
+  // In the air a dolphin is one stiff body pitching over the top of its arc, not a
+  // snake sliding along the curve. Near and above the surface the spine becomes a
+  // straight line through the middle of the body, along the arc's direction there,
+  // so the whole animal rotates nose-up, level, then nose-down into the water.
+  {
+    const mid = o.d - 0.45 * BODY;
+    pathAt(o.path, mid); const mx = QX, my = QY, mz = QZ;
+    pathAt(o.path, mid + 0.25); const ax = QX, ay = QY, az = QZ;
+    pathAt(o.path, mid - 0.25);
+    let tx = ax - QX, ty = ay - QY, tz = az - QZ; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    const air = smooth(SURF - 0.6, SURF + 0.15, my);
+    o.air = air;
+    if (air > 0) for (let i = 0; i < SP; i++) {
+      const u = (0.45 - i / (SP - 1)) * BODY, k = i * 3;
+      BP[k] += (mx + tx * u - BP[k]) * air; BP[k + 1] += (my + ty * u - BP[k + 1]) * air; BP[k + 2] += (mz + tz * u - BP[k + 2]) * air;
+    }
+  }
   laneOffset(o);
   // bank: compare the heading at the snout with the heading mid-body
   const ax = BP[0] - BP[24], az = BP[2] - BP[26], bx = BP[48] - BP[72], bz = BP[50] - BP[74];
@@ -1119,27 +1136,36 @@ function swimClown(o, dt) {
 // picks what to do next: potter about the anemone, hover and fan its fins,
 // dart across, nestle down among the arms, or turn and go back the other way.
 // It steers towards that, turns gradually, and faces where it is going.
-const CLOWN_MODES = [['wander', 4], ['hover', 2], ['dart', 1.5], ['nestle', 1.5], ['turn', 1]];
+const CLOWN_MODES = [['wander', 3], ['hover', 1.5], ['dart', 1.2], ['nestle', 2], ['rub', 1.6], ['turn', 1], ['peek', 1]];
 function pickMode(R) { let t = 0; for (const [, w] of CLOWN_MODES) t += w; let u = R() * t; for (const [m, w] of CLOWN_MODES) if ((u -= w) <= 0) return m; return 'wander'; }
 function steerFree(o, dt, tx, ty, tz, speed) {
   const H = o.home;
-  const y0 = o.mode === 'nestle' && H.yIn !== undefined ? H.yIn : H.y0, z0 = o.mode === 'nestle' && H.zIn !== undefined ? H.zIn : H.z - H.rz;
+  const deep = o.mode === 'nestle' || o.mode === 'rub', y0 = deep && H.yIn !== undefined ? H.yIn : H.y0, z0 = deep && H.zIn !== undefined ? H.zIn : H.z - H.rz;
   tx = clamp(tx, H.x - H.rx, H.x + H.rx); ty = clamp(ty, y0, H.y1); tz = clamp(tz, z0, H.z + H.rz);
   const dx = tx - o.cx, dy = ty - o.cy, dz = tz - o.cz, d = Math.hypot(dx, dy, dz) || 1e-3;
-  const want = Math.min(speed, d * 1.6), k = Math.min(1, dt * 2.2);
+  // clownfish row with their pectorals: speed comes in little pulses, one per stroke
+  const pulse = 0.75 + 0.35 * Math.max(0, Math.sin(o.phase * 0.5));
+  const want = Math.min(speed * pulse, d * 1.6), k = Math.min(1, dt * 2.2);
   o.vx += (dx / d * want - o.vx) * k; o.vy += (dy / d * want * 0.6 - o.vy) * k; o.vz += (dz / d * want - o.vz) * k;
   o.cx += o.vx * dt; o.cy += o.vy * dt + 0.012 * Math.sin(TIME * 1.7 + o.seed) * dt; o.cz += o.vz * dt;
   o.cx = clamp(o.cx, H.x - H.rx - 0.2, H.x + H.rx + 0.2); o.cy = clamp(o.cy, Math.min(y0, H.y0), H.y1); o.cz = clamp(o.cz, Math.min(z0, H.z - H.rz) - 0.2, H.z + H.rz + 0.2);
   o.speed = Math.hypot(o.vx, o.vy, o.vz);
   // face the way it swims; keep the last heading while hovering, turning slowly
   if (o.speed > 0.04) {
-    let fx = o.vx, fy = clamp(o.vy, -0.35 * o.speed, 0.35 * o.speed), fz = o.vz; const l = Math.hypot(fx, fy, fz); fx /= l; fy /= l; fz /= l;
+    let fx = o.vx, fy = clamp(o.vy * 1.6, -0.8 * o.speed, 0.6 * o.speed), fz = o.vz; const l = Math.hypot(fx, fy, fz); fx /= l; fy /= l; fz /= l;   // nose down to dive in, up to rise
     const t = Math.min(1, dt * (o.mode === 'dart' ? 6 : 3));
     o.hx += (fx - o.hx) * t; o.hy += (fy - o.hy) * t; o.hz += (fz - o.hz) * t;
   }
   let fx = o.hx, fy = o.hy, fz = o.hz; const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
   let ux = -fx * fy, uy = 1 - fy * fy, uz = -fz * fy; const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
-  const sx = fy * uz - fz * uy, sy = fz * ux - fx * uz, sz = fx * uy - fy * ux, F = o.F, sc = o.scale || 1;
+  let sx = fy * uz - fz * uy, sy = fz * ux - fx * uz, sz = fx * uy - fy * ux;
+  // bank into turns, and roll from side to side while rubbing against the arms
+  const yaw = Math.atan2(fz, fx); let dy_ = yaw - (o.lastYaw === undefined ? yaw : o.lastYaw); dy_ = ((dy_ + Math.PI) % TAU + TAU) % TAU - Math.PI; o.lastYaw = yaw;
+  const rollWant = clamp(-dy_ / Math.max(dt, 1e-3) * 0.25, -0.5, 0.5) + (o.mode === 'rub' ? 0.55 * Math.sin(TIME * 3.1 + o.seed) : 0);
+  o.rollA = (o.rollA || 0) + (rollWant - (o.rollA || 0)) * Math.min(1, dt * 4);
+  const cr = Math.cos(o.rollA), sr = Math.sin(o.rollA);
+  [ux, uy, uz, sx, sy, sz] = [ux * cr + sx * sr, uy * cr + sy * sr, uz * cr + sz * sr, sx * cr - ux * sr, sy * cr - uy * sr, sz * cr - uz * sr];
+  const F = o.F, sc = o.scale || 1;
   F[0] = fx * sc; F[1] = fy * sc; F[2] = fz * sc; F[3] = ux * sc; F[4] = uy * sc; F[5] = uz * sc; F[6] = sx * sc; F[7] = sy * sc; F[8] = sz * sc;
   const hl = Math.hypot(fx, fz) || 1; o.kx = fx / hl; o.kz = fz / hl;
 }
@@ -1154,7 +1180,11 @@ function swimClownFree(o, dt) {
   o.burst *= Math.exp(-dt * 1.2);
   o.timer -= dt;
   const reached = Math.hypot(o.tx - o.cx, o.ty - o.cy, o.tz - o.cz) < 0.08;
-  if (o.mode === 'nestle' && reached && o.timer > 0.6 && H.yIn !== undefined) {   // deep in the arms: thread on to the next gap
+  if (o.mode === 'follow' || o.mode === 'nudge') {          // the mate keeps to its partner: trailing behind, or swimming up to it
+    const L = o.mate, gap = o.mode === 'nudge' ? 1.42 : 1.6;
+    o.tx = L.cx - L.hx * gap; o.ty = L.cy + 0.05; o.tz = L.cz - L.hz * gap;
+  }
+  if ((o.mode === 'nestle' || o.mode === 'rub') && reached && o.timer > 0.6 && H.yIn !== undefined) {   // deep in the arms: thread on to the next gap
     o.tx = H.x + (R() - 0.5) * H.rx; o.ty = H.yIn + R() * 0.15; o.tz = (H.zIn + H.z) / 2 + (R() - 0.5) * 0.3;
   } else if (reached && o.mode !== 'hover' && o.timer > 0.3) o.timer = 0.3;          // arrived: soon do something else
   if (o.timer <= 0) {                                  // decide what to do next
@@ -1165,20 +1195,22 @@ function swimClownFree(o, dt) {
     if (o.mode === 'wander') { o.tx = H.x + (R() - 0.5) * 2 * H.rx; o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * 2 * H.rz; o.timer = 2.5 + R() * 2; }
     if (o.mode === 'hover') { o.tx = o.cx; o.ty = Math.max(o.cy, H.y0); o.tz = o.cz; o.timer = 1.0 + R() * 0.8; }
     if (o.mode === 'dart') { o.tx = H.x + side * H.rx * (0.6 + 0.4 * R()); o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * H.rz; o.timer = 1.2 + R(); o.burst = 1; }
-    if (o.mode === 'nestle') { o.tx = H.x + (R() - 0.5) * H.rx * 0.8; o.ty = H.yIn !== undefined ? H.yIn : H.y0; o.tz = H.zIn !== undefined ? (H.zIn + H.z) / 2 : H.z; o.timer = 3.5 + R() * 2; }
+    if (o.mode === 'nestle' || o.mode === 'rub') { o.tx = H.x + (R() - 0.5) * H.rx * 0.8; o.ty = H.yIn !== undefined ? H.yIn + R() * 0.1 : H.y0; o.tz = H.zIn !== undefined ? H.zIn + R() * 0.25 : H.z; o.timer = o.mode === 'rub' ? 3 + R() * 2 : 3.5 + R() * 2; }
+    if (o.mode === 'peek') { o.tx = H.x + (R() - 0.5) * H.rx * 0.5; o.ty = H.y0 + 0.05; o.tz = H.z + H.rz; o.timer = 1.6 + R(); }   // out to the front of the anemone, looking out
+    if (o.mate && R() < 0.4) { o.mode = R() < 0.65 ? 'follow' : 'nudge'; o.timer = o.mode === 'follow' ? 3 + R() * 2 : 1.4; if (o.mode === 'nudge') o.burst = 0.6; }
     if (o.mode === 'turn') { o.tx = o.cx + side * H.rx * 0.9; o.ty = o.cy; o.tz = o.cz + (R() - 0.5) * 0.3; o.timer = 1.8 + R(); }
   }
-  const sp = { wander: 0.24, hover: 0.04, dart: 0.85, nestle: 0.14, turn: 0.3 }[o.mode] * (o.pace || 1);
+  const sp = { wander: 0.24, hover: 0.04, dart: 0.85, nestle: 0.16, rub: 0.12, turn: 0.3, peek: 0.3, follow: 0.4, nudge: 0.55 }[o.mode] * (o.pace || 1);
   const hv = o.mode === 'hover' ? 1 : 0;
   steerFree(o, dt, o.tx + hv * 0.08 * Math.cos(TIME * 1.3 + o.seed), o.ty + hv * 0.04 * Math.sin(TIME * 2 + o.seed), o.tz + hv * 0.05 * Math.sin(TIME * 1.3 + o.seed), Math.max(sp, hv * 0.08));
   const inArms = clamp(1 - (o.cy - H.y0) / 0.25, 0, 1);
-  o.freq = (o.mode === 'hover' ? 2.2 : 1.3) + 1.6 * o.burst + 0.8 * inArms; o.amp = (o.mode === 'hover' ? 0.5 : 1) + 0.6 * inArms;
+  o.freq = (o.mode === 'hover' ? 2.2 : o.mode === 'rub' ? 3 : 1.3) + 1.6 * o.burst + 0.8 * inArms; o.amp = (o.mode === 'hover' ? 0.5 : 1) + 0.6 * inArms + (o.mode === 'rub' ? 0.5 : 0);
   o.phase += TAU * o.freq * dt;
   // keep clear of the others in its group
   for (const p of o.group || []) {
     if (p === o) continue;
-    const vx = o.cx - p.cx, vy = o.cy - p.cy, vz = o.cz - p.cz, d = Math.hypot(vx, vy, vz) || 1e-3, need = 1.2 * Math.max(o.scale || 1, p.scale || 1);
-    if (d < need) { const k = (need - d) / d * 0.5; o.cx += vx * k; o.cz += vz * k; }
+    const vx = o.cx - p.cx, vy = o.cy - p.cy, vz = o.cz - p.cz, d = Math.hypot(vx, vy, vz) || 1e-3, need = o.sep || 1.2 * Math.max(o.scale || 1, p.scale || 1);
+    if (d < need) { const k = (need - d) / d * (o.sep ? 1 : 0.5); o.cx += vx * k; o.cz += vz * k; }
   }
 }
 // sideways bend of the body at s
@@ -1335,7 +1367,7 @@ function drawAnemones(t, dt) {
       const sl = Math.sin(a.lat), cl = Math.cos(a.lat);
       let px = A.x + Math.cos(a.lon) * sl * A.r, py = BY + A.h * (0.6 + 0.4 * cl), pz = A.z + Math.sin(a.lon) * sl * A.r;
       let dx = Math.cos(a.lon) * (0.35 + sl) * 0.95, dy = 1.1, dz = Math.sin(a.lon) * (0.35 + sl) * 0.4;
-      const N = 14, seg = a.len / N;
+      const N = 14, seg = a.len * (1 - 0.18 * a.touch) / N;   // touched arms draw back a little
       let tx = 0, ty = 0, tz = 0, touched = 0;
       for (let j = 1; j <= N; j++) {
         const s = j / N;
@@ -1367,7 +1399,7 @@ function drawAnemones(t, dt) {
           }
         }
         if (ny < BY + 0.03) ny = BY + 0.03;
-        const r0 = 0.052 * (1 - 0.15 * (s - 1 / N)), r1 = j === N ? 0.048 : 0.052 * (1 - 0.15 * s);
+        const tipBulb = j >= N - 1 ? 1.25 : 1, r0 = 0.05 * (1 - 0.18 * (s - 1 / N)) * (j === N ? 1.15 : 1), r1 = 0.05 * (1 - 0.18 * s) * tipBulb;
         tube(px, py, pz, nx, ny, nz, r0, r1, 0.12 + 0.5 * s * s, 54, ppu);
         px = nx; py = ny; pz = nz;
       }
@@ -2644,7 +2676,7 @@ const KINDS = {
   manta:   { swim: swimManta, draw: drawManta, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
   clown:   { swim: swimClownFree, draw: drawClown, rigid: true, poke: o => { o.timer = 0; } },
   clownfar: { swim: swimClownFree, draw: drawClown, rigid: true, calm: true, poke: () => {} },
-  dancer:  { swim: swimDancer, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
+  dancer:  { swim: swimClownFree, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
   clownlet: { swim: (o, dt) => { swimClown(o, dt); const F = o.F; for (let i = 0; i < 9; i++) F[i] *= o.scale; }, draw: drawClown, rigid: true, calm: true, poke: () => {} },
   fish:    { swim: swimFish, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
   glide:   { swim: swimGlide, draw: () => {}, rigid: true, calm: true, poke: () => {} } };
@@ -2664,7 +2696,7 @@ const SCENES = {
       const rocks = makeRocks(9, 5);
       ENV = { rocks, tufts: makeTufts(40, rocks, 6), meadow: null, corals: [], shoals: [silver(17, [-1.4, -0.75, -1.3])], stars: makeStars(8, 7), waterline: true, noSurface: true };
     } },
-  shark: { rate: 'tail', tag: 'carcharhinus · hunting', tap: 'tap to make it dart', view: { yaw: -Math.PI / 2 + 0.22, half: 0.6, side: 0.95, pitch: 0.32 }, bands: SHARK_BANDS,
+  shark: { rate: 'tail', tag: 'carcharhinus · hunting', tap: 'tap to make it dart', view: { yaw: -Math.PI / 2, half: 0.6, side: 0.95, pitch: 0.2 }, bands: SHARK_BANDS,
     build() {
       const k = KINDS.shark;
       HM = null;
@@ -2724,8 +2756,9 @@ const SCENES = {
       const R = rng(42), pinks = [];
       animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 1 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 2 })];
       const home = { x: 0.1, z: -0.5, rx: 0.85, rz: 0.35, y0: FLOOR + 0.82, y1: FLOOR + 1.2, yIn: FLOOR + 0.66, zIn: -1.0 };
-      initFree(animals[0], home, R); initFree(animals[1], home, R); animals[1].scale = 0.85;
-      animals[1].cx = animals[0].cx + 1.4; animals[1].timer = 1e9;
+      initFree(animals[0], home, R); initFree(animals[1], home, rng(77)); animals[1].scale = 0.85;
+      animals[1].cx = animals[0].cx + 1.5; animals[1].mate = animals[0];
+      animals[0].group = animals[1].group = [animals[0], animals[1]]; animals[0].sep = animals[1].sep = 1.4;
       // far off, a second anemone with its own little family
       const farHome = { x: 0.7, z: -6.2, rx: 0.7, rz: 0.3, y0: FLOOR + 2.75, y1: FLOOR + 3.05 }, family = [];
       for (let k = 0; k < 4; k++) { const f = makeSwimmer(KINDS.clownfar, { route: CLOWN_ROUTE, base: 0.2, start: 0, seed: 10 + k }); f.scale = 0.7 + 0.12 * (k === 0); initFree(f, farHome, rng(500 + k)); f.pace = 0.9; family.push(f); }
