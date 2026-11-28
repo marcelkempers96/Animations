@@ -149,6 +149,8 @@ body { background: var(--sea); color: var(--ink); font-family: var(--mono); over
 .tune { flex: 1; min-height: 0; overflow: auto; padding-block: 6px 24px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .tune-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px 28px; margin-bottom: 14px; }
+.tune { -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 64px), rgba(0,0,0,0.15) 100%); mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 64px), rgba(0,0,0,0.15) 100%); }
+.tune.at-end { -webkit-mask-image: none; mask-image: none; }
 .knob { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 11px; color: var(--dim); }
 .knob b { color: var(--ink); font-weight: 400; font-variant-numeric: tabular-nums; }
 .knob input { grid-column: 1 / -1; width: 100%; margin: -6px 0 -4px; }
@@ -380,14 +382,16 @@ const cam = { dist: 4.0, pitch: 0.08, dyaw: 0, dpitch: 0, head: 0, ready: false 
 let CX = 0, CY = 0, CZ = 0, RX = 1, RZ = 0, UX = 0, UY = 1, UZ = 0, FX = 0, FY = 0, FZ = -1, FOC = 30, ASP = 0.5;
 let TX = 0, TY = 0, TZ = 0;
 function setCamera(dt) {
-  const A = animals[0], h = Math.atan2(A.kz, A.kx);
+  // in the reefscapes a diver swims in after 8 s; the camera then closes in and follows them
+  const D = ENV.diver, k = D ? smooth(8, 12, TIME - ENV.t0) : 0;
+  const A = D && k > 0.5 ? D : animals[0], h = Math.atan2(A.kz, A.kx);
   if (!cam.ready) { cam.head = h; cam.ready = true; }
   let dh = h - cam.head; dh = ((dh + Math.PI) % TAU + TAU) % TAU - Math.PI;
   cam.head += dh * (1 - Math.exp(-dt * 2.2));
-  TX = A.cx; TY = A.cy; TZ = A.cz;
+  if (k > 0) { const G = animals[0]; TX = G.cx + (D.cx - G.cx) * k; TY = G.cy + (D.cy - G.cy) * k; TZ = G.cz + (D.cz - G.cz) * k; } else { TX = A.cx; TY = A.cy; TZ = A.cz; }
   const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0)) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
-  const pitch = clamp(VIEW.pitch + cam.dpitch, -1.53, 1.53);   // up to almost straight down
-  const dist = VIEW.dist || cam.dist;
+  const pitch = clamp(VIEW.pitch - 0.35 * k + cam.dpitch, -1.53, 1.53);   // up to almost straight down
+  const dist = (VIEW.dist || cam.dist) * (1 - 0.35 * k);
   CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
   CY = TY + dist * Math.sin(pitch);
   CZ = TZ + dist * Math.cos(pitch) * Math.cos(yaw);
@@ -396,7 +400,7 @@ function setCamera(dt) {
   const r = Math.hypot(FZ, FX) || 1e-6; RX = -FZ / r; RZ = FX / r;   // right = forward x up
   UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;              // up = right x forward
   ASP = CW / CH;
-  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * ASP), (COLS / 2) * dist / VIEW.side) * (cam.zoom || 1) * TUNE.zoom;
+  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * (1 - 0.45 * k) * ASP), (COLS / 2) * dist / (VIEW.side * (1 - 0.45 * k))) * (cam.zoom || 1) * TUNE.zoom;
 }
 
 // [projection]
@@ -1521,9 +1525,9 @@ function drawAnemones(t, dt) {
 // a lazy barrel roll. Back flippers trail and steer.
 const SEALION_PROFILE = {
   S: [0, .03, .07, .11, .16, .21, .28, .37, .47, .57, .67, .77, .86, .94, 1],
-  T: [.006, .03, .055, .068, .064, .072, .1, .122, .128, .118, .098, .072, .048, .03, .018],
-  B: [.005, .026, .048, .06, .058, .07, .1, .124, .13, .12, .098, .07, .045, .026, .014],
-  W: [.006, .03, .056, .07, .066, .075, .104, .126, .13, .12, .1, .074, .05, .032, .02] };
+  T: [.008, .036, .064, .08, .078, .092, .13, .158, .166, .152, .122, .084, .052, .03, .018],
+  B: [.006, .032, .058, .074, .074, .096, .15, .19, .2, .184, .144, .096, .056, .028, .014],    // a deep, rounded belly
+  W: [.008, .036, .066, .084, .082, .1, .146, .176, .182, .166, .132, .09, .056, .034, .02] };
 function swimSeaLion(o, dt) {
   o.stroke = (o.stroke || 0) + dt * 0.75;
   const pull = Math.max(0, Math.sin(o.stroke * TAU));       // the power stroke of the fore flippers
@@ -1695,11 +1699,63 @@ function drawWhaleShark(o) {
 // small fish riding along with the whale shark, held in its frame
 function swimEscort(o, dt) {
   const L = o.lead, s = clamp(o.off[3] || 0, 0, 1); frameAt(L, s);
-  const [f, u, sd] = o.off, j = 0.04 * Math.sin(TIME * 1.3 + o.seed);
-  o.cx = FPX + FTX * f + FUX * (u + j) + FSX * sd; o.cy = FPY + FTY * f + FUY * (u + j) + FSY * sd; o.cz = FPZ + FTZ * f + FUZ * (u + j) + FSZ * sd;
+  // each fish keeps its own loose station and drifts about it: forward and back, side to side,
+  // never two the same, darting now and then; it turns a little the way it drifts
+  const t = TIME + o.seed * 7, free = o.off[3] ? 0.15 : 1;
+  const df = free * (0.14 * Math.sin(t * 0.37) + 0.06 * Math.sin(t * 1.1)), ds = free * (0.16 * Math.sin(t * 0.29 + 1) + 0.05 * Math.sin(t * 0.9)), du = free * 0.06 * Math.sin(t * 0.53);
+  const [f, u, sd] = o.off;
+  o.cx = FPX + FTX * (f + df) + FUX * (u + du) + FSX * (sd + ds); o.cy = FPY + FTY * (f + df) + FUY * (u + du) + FSY * (sd + ds); o.cz = FPZ + FTZ * (f + df) + FUZ * (u + du) + FSZ * (sd + ds);
+  const yw = free * (0.5 * Math.cos(t * 0.29 + 1) * 0.29 * 2.2 + 0.25 * Math.sin(t * 0.8)), c = Math.cos(yw), sn = Math.sin(yw);
+  const tx = FTX * c + FSX * sn, ty = FTY * c + FSY * sn, tz = FTZ * c + FSZ * sn, sx = FSX * c - FTX * sn, sy = FSY * c - FTY * sn, sz = FSZ * c - FTZ * sn;
   const F = o.F, sc = o.scale;
-  F[0] = FTX * sc; F[1] = FTY * sc; F[2] = FTZ * sc; F[3] = FUX * sc; F[4] = FUY * sc; F[5] = FUZ * sc; F[6] = FSX * sc; F[7] = FSY * sc; F[8] = FSZ * sc;
+  F[0] = tx * sc; F[1] = ty * sc; F[2] = tz * sc; F[3] = FUX * sc; F[4] = FUY * sc; F[5] = FUZ * sc; F[6] = sx * sc; F[7] = sy * sc; F[8] = sz * sc;
+  o.freq = o.baseFreq * (1 + 0.4 * Math.max(0, Math.sin(t * 0.6)));
   o.phase += TAU * o.freq * dt; o.speed = L.speed;
+}
+
+// [diver]
+// A scuba diver finning slowly over the reef: dark wetsuit, a tank on the back,
+// mask, yellow fins on a steady flutter kick, arms tucked in. Every few seconds
+// a burst of exhaled bubbles rises from the regulator.
+function swimDiver(o, dt) {
+  o.phase += TAU * 0.55 * dt; o.freq = 0.55; o.amp = 1;
+  ride(o, dt, 0.35);
+  o.breath = (o.breath || 0) - dt;
+  if (o.breath < 0) { o.breath = 3.5 + Math.random();
+    const F = o.F; for (let n = 0; n < 26; n++) emit(o.cx + F[0] * 0.5 + F[3] * 0.1, o.cy + F[4] * 0.1 + 0.05, o.cz + F[2] * 0.5 + F[5] * 0.1, (Math.random() - 0.5) * 0.15, 0.25 + Math.random() * 0.3, (Math.random() - 0.5) * 0.15, 0.2 + Math.random() * 0.8, 6); }
+}
+function drawDiver(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ, W = (x, y, z) => { toWorld(o, x, y, z); return [WX, WY, WZ]; };
+  const T = (a, b, r0, r1, L, m) => tube(a[0], a[1], a[2], b[0], b[1], b[2], r0, r1, L, m, ppu);
+  const kick = Math.sin(o.phase);
+  // torso, hips and head
+  T(W(0.32, 0, 0), W(-0.28, 0.01, 0), 0.17, 0.15, 0.25, 107);
+  T(W(-0.28, 0.01, 0), W(-0.42, 0, 0), 0.15, 0.12, 0.25, 107);
+  T(W(0.36, 0.01, 0), W(0.5, 0.03, 0), 0.08, 0.1, 0.3, 107);
+  dome(...W(0.56, 0.03, 0), 0.1, 0.1, 107, ppu, () => [1, 1, 0]);
+  // mask and regulator
+  for (const sg of [-1, 1]) { const m = W(0.64, 0.05, 0.04 * sg); plot(m[0], m[1], m[2], 0.9, 86, 79, 0.05, 0, LINE); }
+  { const r = W(0.65, -0.03, 0); plot(r[0], r[1], r[2], 0.7, 101, 111, 0.05, 0, LINE); }
+  // the tank, on the back
+  T(W(0.28, 0.19, 0), W(-0.3, 0.17, 0), 0.085, 0.085, 0.45, 47);
+  dome(...W(0.3, 0.19, 0), 0.06, 0.05, 47, ppu, () => [1, 1, 0]);
+  // arms, tucked along the body
+  for (const sg of [-1, 1]) {
+    const sh = W(0.26, 0.02, 0.18 * sg), el = W(0.08, -0.1, 0.22 * sg), ha = W(0.18, -0.16, 0.12 * sg);
+    T(sh, el, 0.055, 0.05, 0.25, 107); T(el, ha, 0.05, 0.045, 0.25, 107);
+  }
+  // legs on a flutter kick, fins at the ends
+  for (const sg of [-1, 1]) {
+    const k = 0.12 * kick * sg, hip = W(-0.4, 0, 0.08 * sg), knee = W(-0.78, -0.02 + k * 0.5, 0.1 * sg), ank = W(-1.12, k, 0.1 * sg);
+    T(hip, knee, 0.075, 0.06, 0.25, 107); T(knee, ank, 0.06, 0.045, 0.25, 107);
+    const n1 = Math.ceil(0.35 * ppu * 1.6) + 2, n2 = Math.ceil(0.14 * ppu * 1.6) + 2;
+    for (let i = 0; i <= n1; i++) for (let j = 0; j <= n2; j++) {
+      const u = i / n1, v = (j / n2 - 0.5) * (0.1 + 0.08 * u), p = W(-1.12 - 0.36 * u, k + k * 1.2 * u, 0.1 * sg + v);
+      plot(p[0], p[1], p[2], 0.55 + 0.3 * (1 - u), 85, 0, 0, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
 }
 
 // [seabed]
@@ -1718,13 +1774,17 @@ function castSand(t) {
     for (let x = 0; x < COLS; x++) {
       const a = (x + 0.5 - COLS / 2) * ia, dy = FY + UY * b;
       if (dy > -1e-4) continue;
-      const d = (FLOOR - CY) / dy, wx = CX + (FX + RX * a + UX * b) * d, wz = CZ + (FZ + RZ * a + UZ * b) * d;
+      const FL = ENV.floorY !== undefined ? ENV.floorY : FLOOR, d = (FL - CY) / dy, wx = CX + (FX + RX * a + UX * b) * d, wz = CZ + (FZ + RZ * a + UZ * b) * d;
       const rip = Math.sin(wx * 7 + 2 * Math.sin(wz * 1.1) + 0.6 * Math.sin(wz * 3.7)), fine = Math.sin(wx * 31 + wz * 7) * Math.sin(wz * 29 - wx * 5);
       let c = (Math.sin(wx * 2.1 + t * 0.8 + Math.sin(wz * 1.7 + t * 0.45)) + Math.sin(wz * 2.5 - t * 0.6 + Math.sin(wx * 1.6 - t * 0.35))) * 0.25 + 0.5;
       c *= c * c;
       let shade = 1;
       for (const o of sh) { const h = Math.max(0.1, o.cy - FLOOR), qx = wx - (o.cx - LX / LY * h), qz = wz - (o.cz - LZ / LY * h); shade *= 1 - 0.55 * Math.exp(-(qx * qx + qz * qz) / (0.25 + 0.1 * h)); }
-      const L = (0.62 + 0.08 * rip + 0.05 * fine + 0.28 * c) * shade, i = y * COLS + x;
+      let L = (0.62 + 0.08 * rip + 0.05 * fine + 0.28 * c) * shade; const i = y * COLS + x;
+      // winding channels of clean sand between darker beds of seagrass and rubble
+      const inCh = !ENV.channels || Math.abs(wz * 0.5 + 1.6 * Math.sin(wx * 0.17) + 0.6 * Math.sin(wx * 0.45 + wz * 0.12)) < 0.55 || Math.abs(wx * 0.4 - 1.2 * Math.sin(wz * 0.21) - 2) < 0.35;
+      if (!inCh) L *= ENV.channels ? 0.12 : 0.3;
+      L *= ENV.sandDim || 1;
       sandLum[i] = Math.min(1, L * Math.exp(-Math.max(0, d - 9) * 0.08));
       if (d < depth[i]) { depth[i] = d; lum[i] = L; mat[i] = 5; chr[i] = (x + y * 3) % 3 ? 0 : rip > 0.6 ? 58 : fine > 0.3 ? 44 : 46; if (!chr[i]) { lum[i] = 0; mat[i] = 0; } else lum[i] = 0.95; glass[i] = 0; kind[i] = GROUND; }
     }
@@ -2851,7 +2911,8 @@ const STOPS = [null,
   [[22, 18, 8], [104, 84, 36], [180, 150, 84]],       // 103 kelp stipe
   [[40, 36, 10], [190, 170, 60], [250, 236, 150]],    // 104 kelp bladders
   [[10, 18, 30], [56, 76, 104], [130, 156, 190]],     // 105 whale shark: blue-grey
-  [[150, 156, 160], [226, 232, 236], [255, 255, 255]] // 106 whale shark spots
+  [[150, 156, 160], [226, 232, 236], [255, 255, 255]], // 106 whale shark spots
+  [[34, 40, 56], [118, 132, 160], [206, 216, 236]],   // 107 diver: neoprene
 ];const COLORS = [], GLYPH = [];
 const ANIMAL_MATS = new Set([1, 2, 3, 25, 26, 27, 28, 29, 30, 50, 51, 52, 53, 58, 89, 90, 100, 101]);
 function tint([r, g, b], animal) {
@@ -3005,8 +3066,9 @@ const KINDS = {
   clownfar: { swim: swimClownFree, draw: drawClown, rigid: true, calm: true, poke: () => {} },
   dancer:  { swim: swimClownFree, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
   clownlet: { swim: (o, dt) => { swimClown(o, dt); const F = o.F; for (let i = 0; i < 9; i++) F[i] *= o.scale; }, draw: drawClown, rigid: true, calm: true, poke: () => {} },
-  sealion: { swim: swimSeaLion, draw: drawSeaLion, prof: SEALION_PROFILE, flex: 0.25, stiff: 0.22, poke: o => { o.rollT = 0; } },
+  sealion: { swim: swimSeaLion, draw: drawSeaLion, prof: SEALION_PROFILE, flex: 0.12, stiff: 0.42, poke: o => { o.rollT = 0; } },
   whale:   { swim: swimShark, draw: drawWhaleShark, prof: WHALE_PROFILE, flex: 0.7, stiff: 0.5, poke: () => {} },
+  diver:   { swim: swimDiver, draw: drawDiver, rigid: true, calm: true, poke: () => {} },
   escort:  { swim: swimEscort, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
   fish:    { swim: swimFish, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
   glide:   { swim: swimGlide, draw: () => {}, rigid: true, calm: true, poke: () => {} } };
@@ -3078,7 +3140,8 @@ const SCENES = {
       for (let i = 0; i < M.n; i++) if (seagrassAt(M.x[i], M.z[i])) keep.push(i);
       for (const f of ['x', 'z', 'h', 'ph', 'az', 'tone']) M[f] = M[f].constructor.from(keep, i => M[f][i]);
       M.n = keep.length;
-      ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
+      const diver = makeSwimmer(KINDS.diver, { route: REEF_ROUTE, base: 0.95, start: 0, lag: 3.9 }); diver.sepR = 0.75; diver.clear = 0.55; animals.push(diver);
+      ENV = { diver, t0: TIME, rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
   carib: { rate: 'drift', tag: 'caribbean', tap: 'drag to look around', view: { dist: 4.6, half: 1.25, side: 2.2, pitch: 0.95 }, bands: DOLPHIN_BANDS,
     build() {
@@ -3121,7 +3184,8 @@ const SCENES = {
       for (let i = 0; i < M.n; i++) if (seagrassAt(M.x[i], M.z[i])) keep.push(i);
       for (const f of ['x', 'z', 'h', 'ph', 'az', 'tone']) M[f] = M[f].constructor.from(keep, i => M[f][i]);
       M.n = keep.length;
-      ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
+      const diver = makeSwimmer(KINDS.diver, { route: REEF_ROUTE, base: 0.95, start: 0, lag: 3.9 }); diver.sepR = 0.75; diver.clear = 0.55; animals.push(diver);
+      ENV = { diver, t0: TIME, rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, font: 1.6, half: 0.36, side: 0.6, pitch: 0.12 }, bands: DOLPHIN_BANDS,
     build() {
@@ -3153,7 +3217,7 @@ const SCENES = {
               shoals: [makeShoal({ n: 30, seed: 27, mat: 23, at: [-1, -1.1, -0.5], small: true, roam: [1.5, 0.2, 1], drift: 0.08, spread: [1, 0.4, 0.8], jitter: 0.05 })] };
     } },
   sealion: { rate: 'stroke', tag: 'zalophus californianus', tap: 'tap for a barrel roll', view: { yaw: -Math.PI / 2 + 0.22, half: 0.62, side: 1.0, pitch: 0.28 },
-    bands: [[[34, 24, 14], [112, 78, 48], [196, 150, 100]], [[56, 40, 24], [166, 122, 78], [230, 192, 140]], [[70, 56, 38], [188, 158, 116], [240, 220, 182]]],
+    bands: [[[52, 38, 24], [146, 106, 68], [222, 180, 128]], [[76, 56, 34], [196, 150, 98], [246, 214, 164]], [[92, 76, 54], [214, 186, 144], [252, 236, 204]]],
     build() {
       HM = null;
       animals = [makeSwimmer(KINDS.sealion, { route: SEALION_ROUTE, base: 1.0, start: 0 })];
@@ -3172,9 +3236,13 @@ const SCENES = {
       const R = rng(71);
       const trevally = { body: 24, belly: 52, fin: 24, deep: 1.3, thin: 0.6, wag: 0.07, dorsal: 0.08, forked: true },
             remora = { body: 101, belly: 67, stripes: 67, fin: 101, deep: 0.7, thin: 0.9, wag: 0.03, dorsal: 0.04 };
-      for (let k = 0; k < 7; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = trevally; o.scale = 0.12 + R() * 0.03; o.freq = 3.2; o.off = [0.12 + R() * 0.35, (R() - 0.5) * 0.15, (R() - 0.5) * 0.45, 0]; animals.push(o); }
-      for (let k = 0; k < 3; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = remora; o.scale = 0.15; o.freq = 1.2; o.off = [0, -0.17, (k - 1) * 0.08, 0.35 + k * 0.08]; animals.push(o); }
-      ENV = { rocks: [], tufts: [], meadow: null, corals: [], stars: [], water: 0.6, snowK: 2.6, shoals: [] };
+      for (let k = 0; k < 7; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = trevally; o.scale = 0.11 + R() * 0.04; o.baseFreq = 2.6 + R(); o.off = [0.3 + R() * 0.55, (R() - 0.5) * 0.3, (R() - 0.5) * 0.9, 0]; animals.push(o); }
+      for (let k = 0; k < 3; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = remora; o.scale = 0.15; o.baseFreq = 1.2; o.off = [0, -0.17, (k - 1) * 0.08, 0.35 + k * 0.08]; animals.push(o); }
+      // a few others, far off: a turtle, a small manta, a school of silver fish, deep below
+      const far = makeSwimmer(KINDS.turtle, { route: WHALE_ROUTE.map(([x, y, z]) => [x * 1.4 + 3, y - 2.6, z * 1.3 - 3]), base: 0.35, start: 0.45 });
+      animals.push(far);
+      ENV = { rocks: [], tufts: [], meadow: null, corals: [], stars: [], water: 0.6, snowK: 2.6, cast: true, floorY: FLOOR - 3.2, channels: true, sandDim: 0.14,
+              shoals: [silver(72, [-4, -1.2, -6]), silver(73, [5, -1.4, 2])] };
     } },
   manta: { rate: 'wingbeat', tag: 'mobula birostris', tap: 'tap: an extra wingbeat', view: { yaw: -Math.PI / 2 + 0.35, dist: 2.0, half: 0.85, side: 1.45, pitch: -1.3 }, bands: DOLPHIN_BANDS,
     build() {
@@ -3383,6 +3451,7 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
   tuneBtn.addEventListener('click', () => open('tune'));
   document.getElementById('hideSrc').addEventListener('click', sync);
   sync();
+  tuneBox.addEventListener('scroll', () => tuneBox.classList.toggle('at-end', tuneBox.scrollTop + tuneBox.clientHeight >= tuneBox.scrollHeight - 4));
   const KNOBS = [
     ['hue', 'Animal colour', -180, 180, 1, 0, v => (v > 0 ? '+' : '') + v + '°', true],
     ['sat', 'Colour intensity', 0, 2, 0.01, 1, v => Math.round(v * 100) + '%', true],
