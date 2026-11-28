@@ -637,16 +637,6 @@ function swimDolphin(o, dt) {
       for (let i = 0; i < SP; i++) { const w = (i / (SP - 1) - 0.45) / 0.55, a = 0.07 * air * (1 - w * w) - 0.035 * air, k = i * 3; BP[k] += ux * a; BP[k + 1] += uy * a; BP[k + 2] += uz * a; }
     }
   }
-  // a bubble ring: slow down, pivot nose-up about the middle of the body, blow a ring, level out again
-  if (o.ringA) {
-    const j = Math.round(0.42 * (SP - 1)) * 3, px = BP[j], py = BP[j + 1], pz = BP[j + 2];
-    const ax = -o.kz, az = o.kx, c = Math.cos(o.ringA), sn = Math.sin(o.ringA);
-    for (let i = 0; i < SP; i++) {
-      const k = i * 3, vx = BP[k] - px, vy = BP[k + 1] - py, vz = BP[k + 2] - pz, d = ax * vx + az * vz;
-      const cx = -az * vy, cy = az * vx - ax * vz, cz = ax * vy;   // axis x v
-      BP[k] = px + vx * c + cx * sn + ax * d * (1 - c); BP[k + 1] = py + vy * c + cy * sn; BP[k + 2] = pz + vz * c + cz * sn + az * d * (1 - c);
-    }
-  }
   laneOffset(o);
   // bank: compare the heading at the snout with the heading mid-body
   const ax = BP[0] - BP[24], az = BP[2] - BP[26], bx = BP[48] - BP[72], bz = BP[50] - BP[74];
@@ -2778,50 +2768,112 @@ function drawWaterline(t) {
     for (let k = 0; k < n; k++) { const a = k / n * TAU; plot(R.x + Math.cos(a) * rad, SURF + 0.02, R.z + Math.sin(a) * rad, 0.9 * (1 - age / 3.5), 10, k % 2 ? 126 : 111, 0, 0, LINE); }
   }
 }
-// After the leap: as soon as it lands, a second dolphin comes in on its right,
-// swims close alongside for three seconds, touches it, both breathe out a
-// stream of bubbles, and it peels away again.
-function dolphinDirector(dt) {
-  const L = animals[0], V = animals.find(o => o.visitor);
-  if (!V) return;
-  const hy = L.SPn[1];
-  if (L.prevHY !== undefined && L.prevHY > SURF && hy <= SURF) L.landT = TIME;
-  L.prevHY = hy;
-  const t = L.landT === undefined ? -1 : TIME - L.landT;
-  let side = 40;
-  if (t >= 0 && t < 7) side = t < 1.4 ? 5 - 4.15 * smooth(0, 1.4, t) : t < 4.4 ? 0.85 - 0.15 * Math.sin((t - 1.4) / 3 * Math.PI) : 0.85 + 9 * smooth(4.4, 7, t);
-  V.side = side; V.up = 0.04; V.d = L.d - 0.3 + (t >= 0 && t < 4.4 ? 0.12 * smooth(1.4, 2.9, t) : 0);
-  if (t >= 2.9 && t < 2.9 + dt * 1.5) { L.exhale = 1.6; V.exhale = 1.6; }
+// Twenty seconds in, a small pod comes up from behind, settles into loose
+// formation around the dolphin (a body length or so away on either side, a
+// little above or below, never touching), swims with it for a while, then
+// speeds up, drifts wider and leaves. Each one swims the leader's own stroke a
+// moment later, so they move together like a real pod, but never in lockstep.
+// (the camera follows from behind, so they spread above, below and ahead of it, not far out to the sides)
+const POD_SLOTS = [{ fwd: 1.4, side: -0.2, up: 0.75, delay: 0.25 }, { fwd: 1.0, side: -0.7, up: -0.65, delay: 0.4 }, { fwd: -0.4, side: -0.4, up: -1.15, delay: 0.5 },
+                   { fwd: 2.9, side: -0.2, up: 0.0, delay: 0.15 }, { fwd: 3.6, side: -0.6, up: 1.0, delay: 0.6 }];
+const PODHIST = [];
+function podRecord() {
+  const L = animals[0], m = (SP * 0.42 | 0) * 3;
+  PODHIST.push({ t: TIME, SPn: Float32Array.from(L.SPn), ST: Float32Array.from(L.ST), SU: Float32Array.from(L.SU), SS: Float32Array.from(L.SS), mx: L.SPn[m], my: L.SPn[m + 1], mz: L.SPn[m + 2] });
+  while (PODHIST.length > 2 && PODHIST[1].t < TIME - 1.2) PODHIST.shift();
 }
-// Dolphins blow rings: a puff of air from the blowhole curls into a spinning
-// torus that rises slowly, widening and wobbling, until it reaches the surface.
+function podDirector(dt) {
+  const age = TIME - ENV.t0, tc = age < 20 ? -1 : (age - 20) % 75;   // the first visit at 20 s, then every 75 s
+  for (const o of animals) if (o.slot) { o.tc = tc; o.hidden = tc < 0 || tc > 17; }
+}
+function swimPodmate(o, dt) {
+  const L = animals[0], P = o.slot, tc = o.tc;
+  if (o.hidden || !PODHIST.length) { o.headY = o.tailY = -9; return; }
+  let H = PODHIST[0];
+  for (const h of PODHIST) if (h.t <= TIME - P.delay) H = h;
+  const come = smooth(0, 5, tc), wide = 1 - smooth(2, 6, tc), go = smooth(10.5, 16, tc);
+  const fwd = P.fwd - 9 * (1 - come) + 12 * smooth(12, 17, tc) + 0.25 * Math.sin(TIME * 0.4 + o.seed);
+  const side = P.side * (1 + 1.2 * wide + 1.5 * go) + 0.12 * Math.sin(TIME * 0.33 + o.seed * 2);
+  const up = P.up - 1.6 * wide - 0.5 * go + 0.08 * Math.sin(TIME * 0.27 + o.seed * 3);
+  const m = (SP * 0.42 | 0) * 3, fx = L.kx, fz = L.kz;
+  const ox = L.SPn[m] - H.mx + fx * fwd - fz * side, oy = L.SPn[m + 1] - H.my + up, oz = L.SPn[m + 2] - H.mz + fz * fwd + fx * side;
+  for (let i = 0; i < SP * 3; i += 3) { o.SPn[i] = H.SPn[i] + ox; o.SPn[i + 1] = H.SPn[i + 1] + oy; o.SPn[i + 2] = H.SPn[i + 2] + oz; }
+  o.ST.set(H.ST); o.SU.set(H.SU); o.SS.set(H.SS);
+  o.cx = H.mx + ox; o.cy = H.my + oy; o.cz = H.mz + oz; o.kx = fx; o.kz = fz;
+  const hy = o.SPn[1], ty = o.SPn[(SP - 1) * 3 + 1];                 // its own splash where it breaks the surface
+  if (o.headY > -9 && (o.headY < SURF) !== (hy < SURF)) { if (hy > SURF) splash(o.SPn[0], o.SPn[2], 0.6); else entry(o.SPn[0], o.SPn[2], o.ST[0], o.ST[2], 1.1); }
+  if (o.tailY > -9 && (o.tailY < SURF) !== (ty < SURF)) entry(o.SPn[(SP - 1) * 3], o.SPn[(SP - 1) * 3 + 2], o.ST[(SP - 1) * 3], o.ST[(SP - 1) * 3 + 2], 0.5);
+  o.headY = hy; o.tailY = ty;
+}
+// and they keep their distance: whenever a body comes within about a metre of
+// another, it eases sideways, and drifts back once it is clear
+function podSpace(dt) {
+  const near = [animals[0]];
+  for (const o of animals) {
+    if (!o.slot || o.hidden) { if (o.slot) o.pv = [0, 0, 0]; continue; }
+    const pv = o.pv || (o.pv = [0, 0, 0]), dk = Math.exp(-dt * 0.25);
+    pv[0] *= dk; pv[1] *= dk; pv[2] *= dk;
+    const S = o.SPn;
+    for (let i = 0; i < SP * 3; i += 3) { S[i] += pv[0]; S[i + 1] += pv[1]; S[i + 2] += pv[2]; }
+    o.cx += pv[0]; o.cy += pv[1]; o.cz += pv[2];
+    for (const q of near) {
+      let best = 99, bx = 0, by = 0, bz = 0;
+      for (let a = 0; a < SP; a += a < SP - 3 ? 3 : 1) for (let c = 0; c < SP; c += c < SP - 3 ? 3 : 1) {
+        const dx = S[a * 3] - q.SPn[c * 3], dy = S[a * 3 + 1] - q.SPn[c * 3 + 1], dz = S[a * 3 + 2] - q.SPn[c * 3 + 2], d = Math.hypot(dx, dy, dz);
+        if (d < best) { best = d; bx = dx; by = dy; bz = dz; }
+      }
+      if (best < 1.2) {
+        const k = (1.2 - best) / (best || 1e-3) * Math.min(1, dt * 8), ix = bx * k, iy = by * k * 0.5, iz = bz * k;
+        pv[0] += ix; pv[1] += iy; pv[2] += iz;
+        for (let i = 0; i < SP * 3; i += 3) { S[i] += ix; S[i + 1] += iy; S[i + 2] += iz; }
+        o.cx += ix; o.cy += iy; o.cz += iz;
+      }
+    }
+    near.push(o);
+  }
+}
+// About ten seconds in, under water, the dolphin slows, rolls over onto its
+// back, lets out a string of bubbles from its mouth one at a time, which
+// wobble slowly up towards the light, and then rolls the right way up again.
 const BRINGS = [];
 function ringDirector(dt) {
   const L = animals[0];
-  if (L.ringT === undefined) L.ringT = -10;                      // the first one about ten seconds in
+  if (L.ringT === undefined) L.ringT = -10;
   L.ringT += dt;
   const t = L.ringT;
-  if (t < 0) { L.ringA = 0; L.slow = 0; return; }
-  if (t - dt < 0 && (L.air > 0 || L.cy > SURF - 1.2)) { L.ringT = -1; L.ringA = 0; L.slow = 0; return; }   // wait until it is well under water, not mid-leap
-  L.slow = smooth(0, 1.2, t) * (1 - smooth(4.6, 6, t));
-  L.ringA = 1.25 * smooth(0.4, 1.8, t) * (1 - smooth(4.2, 5.8, t));
-  if (t >= 2.1 && t - dt < 2.1) { frameAt(L, 0.12); profile(0.12); BRINGS.push({ x: FPX + FUX * PRT, y: FPY + FUY * PRT + 0.05, z: FPZ + FUZ * PRT, t: 0 }); L.exhale = 0.25; }
-  if (t > 6.5) L.ringT = -22 - Math.random() * 8;                // and again every half minute or so
+  if (t < 0) { L.spin = 0; L.slow = 0; return; }
+  if (t - dt < 0 && ((L.air || 0) > 0 || L.cy > SURF - 1.2)) { L.ringT = -1; L.spin = 0; L.slow = 0; return; }   // wait until it is well under water
+  L.slow = 0.7 * smooth(0, 1.6, t) * (1 - smooth(8.5, 10.5, t));
+  L.spin = Math.PI * smooth(0.8, 3.2, t) * (1 - smooth(7.2, 9.8, t));    // onto its back, slowly, and back again
+  for (let n = 0; n < 7; n++) {
+    const at = 3.6 + n * 0.55;
+    if (t >= at && t - dt < at) {
+      frameAt(L, 0.01);
+      const x = FPX + FTX * 0.06 - FUX * 0.02, y = FPY + FTY * 0.06 - FUY * 0.02, z = FPZ + FTZ * 0.06 - FUZ * 0.02;
+      BRINGS.push({ x, y, z, t: 0, r: 0.03 + 0.012 * Math.random() + (n % 3 === 1 ? 0.012 : 0), seed: Math.random() * TAU });
+      for (let k = 0; k < 3; k++) emit(x, y, z, (Math.random() - 0.5) * 0.1, 0.15, (Math.random() - 0.5) * 0.1, 0.15 + Math.random() * 0.3, 5);
+    }
+  }
+  if (t > 10.8) L.ringT = -28 - Math.random() * 10;               // and again every forty seconds or so
 }
+// each bubble is a small wobbling sphere: a rim of ( ) / \ and a glint of light at its top
 function drawBubbleRings() {
   for (const R of BRINGS) {
-    const r = 0.12 + 0.22 * Math.sqrt(R.t), n = Math.max(40, Math.round(r * 170)), tilt = 0.12 * Math.sin(R.t * 1.7);
+    if (!project(R.x, R.y, R.z)) continue;
+    const r = R.r * (1 + 0.12 * R.t), cpu = FOC / PZ, n = clamp(Math.ceil(TAU * r * cpu * 1.6), 10, 60);
+    if (r * cpu < 0.9) { put(PX, PY, PZ, 0.95, 10, r * cpu > 0.5 ? 79 : 111, 0, 0, LINE); continue; }
+    const sq = 1 + 0.08 * Math.sin(R.t * 7 + R.seed);           // it breathes as it rises: wider, then taller
     for (let k = 0; k < n; k++) {
-      const a = k / n * TAU, wob = 1 + 0.06 * Math.sin(a * 3 + R.t * 2);
-      for (const q of [-1.5, -0.5, 0.5, 1.5]) {                  // the tube of the torus, a little thick
-        const rr = r * wob + q * 0.018, y = R.y + Math.sin(a) * r * tilt + (q ? 0.012 * Math.sin(a * 5 + R.t * 6) : 0);
-        plot(R.x + Math.cos(a) * rr, y, R.z + Math.sin(a) * rr, q ? 0.6 : 0.95, 10, q ? 46 : (k + Math.round(R.t * 8)) % 3 ? 111 : 79, 0, 0, LINE);
-      }
+      const a = k / n * TAU, ca = Math.cos(a), sa = Math.sin(a), hx = ca * r * sq, vy = sa * r / sq;
+      const x = R.x + RX * hx + UX * vy, y = R.y + UY * vy, z = R.z + RZ * hx + UZ * vy;
+      const ch = Math.abs(ca) > 0.82 ? (ca > 0 ? 41 : 40) : Math.abs(sa) > 0.9 ? (sa > 0 ? 45 : 95) : (ca * sa > 0 ? 92 : 47);
+      plot(x, y, z, 0.55 + 0.4 * Math.max(0, sa * 0.6 - ca * 0.4), 10, ch, 0, 0, LINE);
     }
+    plot(R.x - RX * r * 0.4 + UX * r * 0.4, R.y + UY * r * 0.4, R.z - RZ * r * 0.4 + UZ * r * 0.4, 1, 10, 39, 0, 0, LINE);
   }
 }
 function bubbles(dt) {
-  for (let i = BRINGS.length - 1; i >= 0; i--) { const R = BRINGS[i]; R.t += dt; R.y += (0.32 + 0.05 * Math.sin(R.t * 2)) * dt; if (R.y > SURF - 0.05 || R.t > 14) BRINGS.splice(i, 1); }
+  for (let i = BRINGS.length - 1; i >= 0; i--) { const R = BRINGS[i]; R.t += dt; R.y += (0.2 + 0.05 * Math.sin(R.t * 3 + R.seed) + 0.04 * R.r / 0.08) * dt; R.x += 0.05 * Math.sin(R.t * 4.3 + R.seed) * dt; R.z += 0.05 * Math.cos(R.t * 3.7 + R.seed) * dt; if (R.y > SURF - 0.05 || R.t > 20) BRINGS.splice(i, 1); }
   for (let i = 0; i < BUB; i++) {
     if (blife[i] <= 0) continue;
     const k = i * 3; blife[i] -= dt;
@@ -3205,6 +3257,7 @@ function drawShoals() {
 //   Clownfish a clownfish nestling in and out of its anemone.
 const KINDS = {
   dolphin: { swim: swimDolphin, draw: drawDolphin, prof: DOLPHIN_PROFILE, poke: o => { o.exhale = 1.4; } },
+  podmate: { swim: swimPodmate, draw: drawDolphin, prof: DOLPHIN_PROFILE, poke: () => {} },
   shark:   { swim: swimShark, draw: drawShark, prof: SHARK_PROFILE, poke: o => { o.burst = 1; } },
   turtle:  { swim: swimTurtle, draw: drawTurtle, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
   manta:   { swim: swimManta, draw: drawManta, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
@@ -3225,15 +3278,14 @@ const silver = (seed, at) => makeShoal({ n: 48, seed, mat: 9, at, roam: [2.4, 0.
 const SCENES = {
   dolphins: { rate: 'fluke', tag: 'tursiops truncatus', tap: 'tap for bubbles', view: { yaw: -Math.PI / 2 + 0.22, half: 0.6, side: 0.95, pitch: 0.32 }, bands: DOLPHIN_BANDS,
     build() {
-      const k = KINDS.dolphin, P = { route: ROUTE_POD, base: 1.4, start: 0.55 };
+      const k = KINDS.dolphin;
       HM = null;
-      animals = [makeSwimmer(k, { route: ROUTE_A, base: 1.45, start: 0.12 }),
-                 makeSwimmer(k, P), makeSwimmer(k, { ...P, lag: 1.2, side: 0.7, up: 0.2, seed: 1 }),
-                 makeSwimmer(k, { ...P, lag: 1.6, side: -0.65, up: -0.15, seed: 2 }), makeSwimmer(k, { ...P, lag: 2.8, side: 0.15, up: 0.3, seed: 3 }),
-];
+      animals = [makeSwimmer(k, { route: ROUTE_A, base: 1.45, start: 0.12 })];
+      PODHIST.length = 0;
+      POD_SLOTS.forEach((slot, i) => { const o = makeSwimmer(KINDS.podmate, { route: ROUTE_A, base: 1.45, seed: i + 1 }); o.slot = slot; o.hidden = true; animals.push(o); });
       RINGS.length = 0; BRINGS.length = 0;
       const rocks = makeRocks(9, 5);
-      ENV = { rocks, tufts: makeTufts(40, rocks, 6), meadow: null, corals: [], shoals: [silver(17, [-1.4, -0.75, -1.3])], stars: makeStars(8, 7), waterline: true, noSurface: true };
+      ENV = { t0: TIME, rocks, tufts: makeTufts(40, rocks, 6), meadow: null, corals: [], shoals: [silver(17, [-1.4, -0.75, -1.3])], stars: makeStars(8, 7), waterline: true, noSurface: true };
     } },
   shark: { rate: 'tail', tag: 'carcharhinus · hunting', tap: 'tap to make it dart', view: { yaw: -Math.PI / 2, half: 0.6, side: 0.95, pitch: 0.2 }, bands: SHARK_BANDS,
     build() {
@@ -3429,8 +3481,9 @@ function setScene(name) {
 // display allows.
 function step(dt) {
   TIME += dt;
-  if (current === 'dolphins') { dolphinDirector(dt); ringDirector(dt); }
-  for (const o of animals) { PROF = o.kind.prof; o.kind.swim(o, dt); }
+  if (current === 'dolphins') { podDirector(dt); ringDirector(dt); }
+  for (const o of animals) { PROF = o.kind.prof; o.kind.swim(o, dt); if (current === 'dolphins' && o === animals[0]) podRecord(); }
+  if (current === 'dolphins') podSpace(dt);
   if (TOPS && (current === 'reef' || current === 'carib')) for (const o of animals) {
     if (o.kind === KINDS.glide) continue;
     let need = Math.max(0, topAt(o.cx, o.cz) + (o.clear || 0.3) - o.cy), rate = 3;
@@ -3466,7 +3519,7 @@ function render(dt) {
   setCamera(dt);
   depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
   drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawKelp(TIME, dt); drawCorals(TIME); drawCritters(TIME); drawAnemones(TIME, dt); drawShoals(); drawPrey();
-  for (const o of animals) { PROF = o.kind.prof; SCX = o.cx; SCY = o.cy; SCZ = o.cz; SCK = TUNE.size; o.kind.draw(o); }
+  for (const o of animals) { if (o.hidden) continue; PROF = o.kind.prof; SCX = o.cx; SCY = o.cy; SCZ = o.cz; SCK = TUNE.size; o.kind.draw(o); }
   SCK = 1;
   if (ENV.waterline) drawWaterline(TIME);
   drawBubbles(); drawBubbleRings(); drawSnow(TIME);
