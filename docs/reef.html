@@ -114,6 +114,24 @@ input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 34p
 input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 10px solid transparent; background-clip: padding-box; }
 input[type="range"]:active::-webkit-slider-thumb { border-width: 8px; }
 .knob input:focus-visible { outline: 1px solid var(--focus); outline-offset: 2px; }
+.about { flex: 1; min-height: 0; overflow: auto; padding-block: 10px 28px; font-size: 12px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.about-logo { height: 26px; width: auto; filter: brightness(1.45); }
+.about .lede { max-width: 62ch; color: var(--ink); margin: 10px 0 4px; }
+.about h3 { font-size: 11px; font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin: 18px 0 8px; }
+.about ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px 24px; }
+.about li { display: grid; gap: 1px; }
+.about li b { color: var(--ink); font-weight: 400; }
+.about li span, .about .small { color: var(--dim); }
+.about .small { margin: 0 0 8px; }
+.about a { color: var(--focus); }
+.contact { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px 16px; max-width: 720px; margin-bottom: 10px; }
+.contact label { display: grid; gap: 3px; color: var(--dim); font-size: 11px; }
+.contact .wide { grid-column: 1 / -1; }
+.contact .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.contact input, .contact select, .contact textarea { font: inherit; font-size: 12px; color: var(--ink); background: var(--sea); border: 1px solid var(--rule); border-radius: 3px; padding: 6px 8px; width: 100%; }
+.contact textarea { resize: vertical; }
+.contact :focus-visible, .about .tool:focus-visible { outline: 1px solid var(--focus); outline-offset: 1px; }
 .progress { height: 2px; background: var(--rule); flex: none; }
 .progress i { display: block; height: 100%; width: 0; background: var(--dim); }
 @media (min-width: 900px) { .panel { flex-basis: 30%; } .code { font-size: 12px; } }
@@ -154,12 +172,46 @@ input[type="range"]:active::-webkit-slider-thumb { border-width: 8px; }
       <div class="tabs" role="tablist" aria-label="Panel">
         <button type="button" role="tab" data-tab="code" aria-selected="true">Code</button>
         <button type="button" role="tab" data-tab="tune" aria-selected="false">Tune</button>
+        <button type="button" role="tab" data-tab="about" aria-selected="false">About</button>
       </div>
       <div class="chips" id="chips" role="tablist" aria-label="Source sections"></div>
       <button class="tool" id="pause" type="button">Pause</button>
       <button class="tool" id="hideSrc" type="button">Hide source</button>
     </div>
     <div class="code" id="code"></div>
+    <div class="about" id="about" hidden>
+      <div class="about-head"><img class="about-logo" id="aboutLogo" alt="Reef Support"></div>
+      <p class="lede">Reef Support builds tools that help people see, map and protect coral reefs. This page is one of them: every animal here is drawn live from code.</p>
+
+      <h3>What we do</h3>
+      <ul class="work">
+        <li><b>3D photogrammetry</b><span>Reefs rebuilt in 3D from diver photos, to measure change over time.</span></li>
+        <li><b>Benthic detection</b><span>AI that recognises corals, algae and substrate in underwater imagery.</span></li>
+        <li><b>Remote sensing</b><span>Earth observation from satellites to map reefs and spot stress at scale.</span></li>
+        <li><b>Hackathons</b><span>Short, open sprints where coders and marine scientists build together.</span></li>
+        <li><b>Student projects</b><span>Theses and internships on real reef data, with our team as mentors.</span></li>
+      </ul>
+
+      <h3>Open calls</h3>
+      <ul class="calls">
+        <li><b>Student thesis</b><span>Train a model to tell live from bleached coral in our survey images.</span></li>
+        <li><b>Hackathon partners</b><span>Host or sponsor a weekend sprint on reef mapping from space.</span></li>
+        <li><b>Dive teams</b><span>Collect photos on your local reef for our 3D models; we share the results.</span></li>
+      </ul>
+
+      <h3>Contact us</h3>
+      <p class="small">Want models like these for your own project, to learn from our data, or to work with us? Write to us.</p>
+      <form class="contact" id="contact">
+        <label for="c-name">Name<input id="c-name" name="name" autocomplete="name" required></label>
+        <label for="c-email">Your email<input id="c-email" name="email" type="email" autocomplete="email" required></label>
+        <label for="c-topic">About<select id="c-topic" name="topic">
+          <option>Working together</option><option>A model or animation</option><option>Student project</option><option>Hackathon</option><option>Data and research</option><option>Something else</option>
+        </select></label>
+        <label for="c-msg" class="wide">Message<textarea id="c-msg" name="message" rows="4" required></textarea></label>
+        <div class="wide row"><button class="tool" type="submit">Write email</button><span class="small" id="c-note"></span></div>
+      </form>
+      <p class="small">Or write to <b class="addr">hello@reef.support</b> <button class="tool" type="button" id="c-copy">Copy address</button> &middot; <a href="https://reef.support" target="_blank" rel="noopener">reef.support</a></p>
+    </div>
     <div class="tune" id="tune" hidden>
       <div class="tune-grid" id="tuneGrid"></div>
       <button class="tool" id="tuneReset" type="button">Reset all</button>
@@ -2880,11 +2932,12 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
   if (window.innerWidth >= 900) panel.hidden = false;      // desktops have room for the code; phones open it with Code
 
   // Tune tab
+  const aboutBox = document.getElementById('about');
   const tabs = document.querySelectorAll('[data-tab]'), tuneBox = document.getElementById('tune'), grid = document.getElementById('tuneGrid');
   let showTab = function (name) {
     for (const t of tabs) t.setAttribute('aria-selected', String(t.dataset.tab === name));
-    tuneBox.hidden = name !== 'tune'; code.hidden = name !== 'code'; chips.hidden = name !== 'code';
-    if (name === 'tune') hold = 1e9; else hold = 0;
+    tuneBox.hidden = name !== 'tune'; code.hidden = name !== 'code'; chips.hidden = name !== 'code'; aboutBox.hidden = name !== 'about';
+    if (name !== 'code') hold = 1e9; else hold = 0;
   }
   const tuneBtn = document.getElementById('showTune');
   let tab = 'code';
@@ -2925,6 +2978,18 @@ document.addEventListener('fullscreenchange', () => { fsBtn.textContent = docume
     return [input, def, apply, key];
   });
   document.getElementById('tuneReset').addEventListener('click', () => { for (const [input, def, apply, key] of inputs) { input.value = key === 'size' ? (SCENES[current].size || 1) : def; apply(); } });
+  // About: the logo, and a contact form that writes the email for you
+  document.getElementById('aboutLogo').src = document.querySelector('.logo').src;
+  const ADDR = 'hello@reef.support', note = document.getElementById('c-note');
+  const copy = (text, done) => { (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => { note.textContent = done; }, () => { note.textContent = 'Copy did not work here: select the text and copy it.'; }); };
+  document.getElementById('c-copy').addEventListener('click', () => copy(ADDR, 'Address copied: ' + ADDR));
+  document.getElementById('contact').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = e.target, subject = 'Reef Support: ' + f.topic.value;
+    const body = `${f.message.value}\n\n${f.name.value} (${f.email.value})`;
+    location.href = `mailto:${ADDR}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    copy(`To: ${ADDR}\nSubject: ${subject}\n\n${body}`, `Your email app should open with the message. If it does not, the message is copied: paste it into an email to ${ADDR}.`);
+  });
   const pauseBtn = document.getElementById('pause');
   pauseBtn.addEventListener('click', () => {
     const p = pauseBtn.textContent === 'Pause';
