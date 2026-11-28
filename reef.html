@@ -230,7 +230,7 @@ input[type="range"]:active::-webkit-slider-thumb { border-width: 8px; }
         <button type="button" data-sc="reef" aria-pressed="true">Reef</button>
         <button type="button" data-sc="carib" aria-pressed="false">Caribbean</button>
         <button type="button" data-sc="clown" aria-pressed="false">Clownfish</button>
-        <button type="button" data-sc="dolphins" aria-pressed="false">Dolphins</button>
+        <button type="button" data-sc="dolphins" aria-pressed="false">Dolphin</button>
         <button type="button" data-sc="shark" aria-pressed="false">Shark</button>
         <button type="button" data-sc="turtle" aria-pressed="false">Turtle</button>
         <button type="button" data-sc="manta" aria-pressed="false">Manta</button>
@@ -590,6 +590,14 @@ function swimDolphin(o, dt) {
   pathAt(o.path, o.d + 1.6);
   const want = o.base + 1.0 * smooth(0.2, 1.6, QY) + 1.4 * smooth(1.3, 2.6, QY);   // it leaves the water fast
   o.speed += (want - o.speed) * Math.min(1, dt * 1.2);
+  // Out of the water it is a thrown body: it leaves fast, slows as it climbs, hangs at the
+  // top of the arc and gathers speed again on the way down, as gravity would have it.
+  pathAt(o.path, o.d - 0.45 * BODY);
+  const midY = QY;
+  if (midY > SURF - 0.05) {
+    if (!o.inAir) { o.inAir = true; o.vExit = Math.max(o.speed, 4.0); }
+    o.speed = Math.sqrt(Math.max(2.0 * 2.0, o.vExit * o.vExit - 2 * 3.0 * (midY - SURF)));
+  } else o.inAir = false;
   o.d = (o.d + o.speed * (1 - 0.92 * (o.slow || 0)) * dt) % o.path.lap;
   o.freq = 0.3 + 0.5 * o.speed * (1 - 0.6 * (o.slow || 0));
   o.phase += o.freq * TAU * dt;
@@ -615,6 +623,10 @@ function swimDolphin(o, dt) {
     if (air > 0) for (let i = 0; i < SP; i++) {
       const u = (0.45 - i / (SP - 1)) * BODY, k = i * 3;
       BP[k] += (mx + tx * u - BP[k]) * air; BP[k + 1] += (my + ty * u - BP[k + 1]) * air; BP[k + 2] += (mz + tz * u - BP[k + 2]) * air;
+    }
+    if (air > 0) {                                     // the body arches gently over the top, head and flukes a little lower
+      let ux = -tx * ty, uy = 1 - ty * ty, uz = -tz * ty; const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+      for (let i = 0; i < SP; i++) { const w = (i / (SP - 1) - 0.45) / 0.55, a = 0.07 * air * (1 - w * w) - 0.035 * air, k = i * 3; BP[k] += ux * a; BP[k + 1] += uy * a; BP[k + 2] += uz * a; }
     }
   }
   // a bubble ring: slow down, pivot nose-up about the middle of the body, blow a ring, level out again
@@ -669,6 +681,9 @@ function swimDolphin(o, dt) {
   if (o.headY > -9 && (o.headY < SURF) !== (hy < SURF)) { if (hy > SURF) splash(SPn[0], SPn[2], 0.8); else entry(SPn[0], SPn[2], ST[0], ST[2], 1.4); }
   if (o.tailY > -9 && (o.tailY < SURF) !== (ty < SURF)) entry(SPn[(SP - 1) * 3], SPn[(SP - 1) * 3 + 2], ST[(SP - 1) * 3], ST[(SP - 1) * 3 + 2], 0.7);
   o.headY = hy; o.tailY = ty;
+  if (ty > SURF && (o.air || 0) > 0.3 && Math.random() < 0.7) {     // water streaming off the flukes
+    const k = (SP - 1) * 3; for (let n = 0; n < 3; n++) emit(SPn[k] + (Math.random() - 0.5) * 0.1, SPn[k + 1], SPn[k + 2] + (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.3, -0.2 * Math.random(), (Math.random() - 0.5) * 0.3, 0, 1.2);
+  }
   if (o.exhale > 0) {
     o.exhale -= dt;
     frameAt(o, 0.17); profile(0.17);
