@@ -1860,7 +1860,7 @@ function castSand(t) {
       if (!inCh) L *= ENV.channels ? 0.12 : 0.3;
       L *= ENV.sandDim || 1;
       sandLum[i] = Math.min(1, L * Math.exp(-Math.max(0, d - 9) * 0.08));
-      if (d < depth[i]) { depth[i] = d; lum[i] = L; mat[i] = 5; chr[i] = (x + y * 3) % 3 ? 0 : rip > 0.6 ? 58 : fine > 0.3 ? 44 : 46; if (!chr[i]) { lum[i] = 0; mat[i] = 0; } else lum[i] = 0.95; glass[i] = 0; kind[i] = GROUND; }
+      if (d < depth[i]) { depth[i] = d; lum[i] = L; mat[i] = ENV.sandMat || 5; chr[i] = (x + y * 3) % 3 ? 0 : rip > 0.6 ? 58 : fine > 0.3 ? 44 : 46; if (!chr[i]) { lum[i] = 0; mat[i] = 0; } else lum[i] = ENV.noFill ? Math.min(0.9, 0.25 + 2.5 * L) : 0.95; glass[i] = 0; kind[i] = GROUND; }
     }
   }
 }
@@ -3029,7 +3029,7 @@ function compose() {
   for (let i = 0; i < n; i++) if (bucket[i] >= 0) order[fill[bucket[i]]++] = i;
   tctx.setTransform(1, 0, 0, 1, 0, 0);
   tctx.clearRect(0, 0, txt.width, txt.height);
-  if (ENV.cast) {                         // the reef: paint the sand itself, beige, under the glyphs
+  if (ENV.cast && !ENV.noFill) {          // the reef: paint the sand itself, beige, under the glyphs
     const n2 = COLS * ROWS, lv = 6;
     for (let l = 0; l < lv; l++) {
       const k = 0.15 + 0.85 * l / (lv - 1);
@@ -3336,7 +3336,7 @@ const SCENES = {
       // a few others, far off: a turtle, a small manta, a school of silver fish, deep below
       const far = makeSwimmer(KINDS.turtle, { route: WHALE_ROUTE.map(([x, y, z]) => [x * 1.4 + 3, y - 2.6, z * 1.3 - 3]), base: 0.35, start: 0.45 });
       animals.push(far);
-      ENV = { rocks: [], tufts: [], meadow: null, corals: [], stars: [], water: 0.6, snowK: 2.6, cast: true, floorY: FLOOR - 3.2, channels: true, sandDim: 0.14,
+      ENV = { rocks: [], tufts: [], meadow: null, corals: [], stars: [], water: 0.6, snowK: 2.6, cast: true, floorY: FLOOR - 3.2, channels: true, sandDim: 0.22, noFill: true, sandMat: 13,
               shoals: [silver(72, [-4, -1.2, -6]), silver(73, [5, -1.4, 2])] };
     } },
   manta: { rate: 'wingbeat', tag: 'mobula birostris', tap: 'tap: an extra wingbeat', view: { yaw: -Math.PI / 2 + 0.35, dist: 2.0, half: 0.85, side: 1.45, pitch: -1.3 }, bands: DOLPHIN_BANDS,
