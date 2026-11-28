@@ -321,8 +321,8 @@ const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TA
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
 // the reef camera drifts in a wide loop over the whole reef, looking down
-const REEF_ROUTE = Array.from({ length: 14 }, (_, i) => { const a = -i / 14 * TAU; return [5.5 * Math.cos(a) + 0.8 * Math.sin(2 * a), FLOOR + 0.25, -2.5 + 3.2 * Math.sin(a)]; });
-const REEF_TURTLE = Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU; return [5 * Math.cos(a), FLOOR + 1.2 + 0.2 * Math.sin(3 * a), -2.5 + 3 * Math.sin(a) + 0.8 * Math.sin(2 * a)]; });
+const REEF_ROUTE = Array.from({ length: 14 }, (_, i) => { const a = -i / 14 * TAU; return [5.5 * Math.cos(a), FLOOR + 0.25, -2.5 + 5.5 * Math.sin(a)]; });
+const REEF_TURTLE = Array.from({ length: 9 }, (_, i) => { const a = i / 9 * TAU; return [5.2 * Math.cos(a), FLOOR + 1.75 + 0.15 * Math.sin(3 * a), -2.5 + 5.2 * Math.sin(a)]; });
 const REEF_ROUTE_OLD = [[-8, -0.75, 0.9], [-4, -0.72, 1.0], [0, -0.78, 0.9], [4, -0.72, 1.0], [8, -0.75, 0.9],
                     [10, -0.75, -0.6], [8, -0.75, -2.1], [4, -0.72, -2.2], [0, -0.78, -2.1], [-4, -0.72, -2.2], [-8, -0.75, -2.1], [-10, -0.75, -0.6]];
 const LEVEL = ([x, y, z]) => [x, FLOOR + 0.62 + (y + 0.35) * 0.05, z];
@@ -2466,7 +2466,12 @@ function shoals(dt) {
       let ay = (cy + off[i + 1] - p[i + 1]) * 1.1 - v[i + 1] * 0.8;
       let az = (cz + off[i + 2] - p[i + 2]) * 1.1 + (vz - v[i + 2]) * 0.8;
       for (const o of animals) {
-        if (o.kind.calm) continue;
+        if (o.kind.calm) {
+          if (!o.sepR) continue;
+          const dx = p[i] - o.cx, dy = p[i + 1] - o.cy, dz = p[i + 2] - o.cz, d2 = dx * dx + dy * dy + dz * dz, r = o.sepR + 0.15;
+          if (d2 < r * r) { const k = (r * r - d2) * 12 / Math.sqrt(d2 + 0.01); ax += dx * k; ay += dy * k; az += dz * k; }
+          continue;
+        }
         const dx = p[i] - o.cx, dy = p[i + 1] - o.cy, dz = p[i + 2] - o.cz, d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < 2.2) { const k = (2.2 - d2) * 5 / Math.sqrt(d2 + 0.01); ax += dx * k; ay += dy * k * 0.5; az += dz * k; }
       }
@@ -2541,36 +2546,41 @@ const SCENES = {
   reef: { rate: 'drift', tag: 'coral triangle', tap: 'drag to look around', view: { dist: 4.6, half: 1.25, side: 2.2, pitch: 0.95 }, bands: DOLPHIN_BANDS,
     build() {
       const { corals, bommies } = makeReefscape(12), R = rng(91);
-      // life gathers along the camera's drift, so you meet it as you go
-      const near = () => { const a = R() * TAU, d = (R() - 0.5) * 2.4; return [5.5 * Math.cos(a) + 0.8 * Math.sin(2 * a) + Math.cos(a * 3) * d, -2.5 + 3.2 * Math.sin(a) + Math.sin(a * 5) * d]; };
-      const spot = () => { let x, z, n = 0; do { [x, z] = near(); } while ((reefGap(x, z) || seagrassAt(x, z)) && n++ < 30); return { x, z, r: 0.6, h: topAt(x, z) - FLOOR }; };
+      // Life is spread evenly round the camera's drift, each animal in its own
+      // slot, so every part of the loop looks the same: never empty, never crowded.
+      const along = (u, d) => { const a = -u * TAU, r = 5.5 + d; return [r * Math.cos(a), -2.5 + r * Math.sin(a)]; };
+      const near = () => along(R(), (R() - 0.5) * 2.4);
+      const slot = (u, d) => { let x, z, n = 0; do { [x, z] = along(u + (R() - 0.5) * 0.01 * n, d * (1 - n / 40)); } while ((reefGap(x, z) || seagrassAt(x, z)) && n++ < 30); return { x, z, h: topAt(x, z) - FLOOR }; };
       animals = [makeSwimmer(KINDS.glide, { route: REEF_ROUTE, base: 0.55, start: 0 }),
-                 makeSwimmer(KINDS.turtle, { route: REEF_TURTLE, base: 0.42, start: 0.3 })];
+                 makeSwimmer(KINDS.turtle, { route: REEF_TURTLE, base: 0.38, start: 0.3 })];
+      animals[1].sepR = 0.75;
       const LOOKS = {
-        grouper: { body: 89, belly: 74, spots: 90, blotch: true, scales: true, fin: 89, edge: 90, iris: 96, deep: 1.1, wag: 0.04, scale: 0.85, speed: 0.25, dorsal: 0.12, n: 4 },
-        parrot: { body: 56, belly: 98, fin: 80, scales: true, wag: 0.06, scale: 0.5, speed: 0.45, forked: true, n: 5 },
-        butterfly: { body: 24, belly: 52, bar: 101, fin: 24, edge: 101, deep: 1.6, thin: 0.6, wag: 0.07, scale: 0.2, speed: 0.3, dorsal: 0.14, n: 6 },
-        tang: { body: 100, belly: 100, swoosh: 101, fin: 100, edge: 101, tail: 24, deep: 1.35, thin: 0.6, wag: 0.06, scale: 0.26, speed: 0.4, dorsal: 0.08, n: 8 } };
-      for (const k in LOOKS) for (let i = 0; i < Math.round(LOOKS[k].n * 1.5); i++) {
-        const L = LOOKS[k], b = spot();
-        const o = makeSwimmer(KINDS.fish, { route: fishRoute(b.x, b.z, b.r + 0.6 + R(), FLOOR + b.h + 0.25 + R() * 0.3, R), base: L.speed, start: R(), seed: R() * 9 });
-        o.look = L; o.scale = L.scale * 1.6 * (0.85 + R() * 0.3); o.clear = 0.25 + o.scale * 0.4; o.freq = 1.2 / Math.sqrt(o.scale); animals.push(o);
+        grouper: { body: 89, belly: 74, spots: 90, blotch: true, scales: true, fin: 89, edge: 90, iris: 96, deep: 1.1, wag: 0.04, scale: 0.85, speed: 0.18, dorsal: 0.12 },
+        parrot: { body: 56, belly: 98, fin: 80, scales: true, wag: 0.06, scale: 0.5, speed: 0.3, forked: true },
+        butterfly: { body: 24, belly: 52, bar: 101, fin: 24, edge: 101, deep: 1.6, thin: 0.6, wag: 0.07, scale: 0.2, speed: 0.22, dorsal: 0.14 },
+        tang: { body: 100, belly: 100, swoosh: 101, fin: 100, edge: 101, tail: 24, deep: 1.35, thin: 0.6, wag: 0.06, scale: 0.26, speed: 0.28, dorsal: 0.08 } };
+      // twelve fish, one per slot, kinds taking turns: a grouper, a tang, a butterflyfish, a parrotfish, ...
+      const ORDER = ['grouper', 'tang', 'butterfly', 'parrot', 'tang', 'butterfly'];
+      for (let i = 0; i < 12; i++) {
+        const L = LOOKS[ORDER[i % ORDER.length]], b = slot((i + 0.5) / 12, (i % 2 ? 1 : -1) * 0.9);
+        const o = makeSwimmer(KINDS.fish, { route: fishRoute(b.x, b.z, 0.55 + R() * 0.25, FLOOR + b.h + 0.35 + R() * 0.15, R), base: L.speed, start: R(), seed: R() * 9 });
+        o.look = L; o.scale = L.scale * 1.6 * (0.9 + R() * 0.2); o.clear = 0.25 + o.scale * 0.4; o.freq = 1.2 / Math.sqrt(o.scale); o.sepR = 0.45 * o.scale + 0.15; animals.push(o);
       }
-      const sh = (n, seed, mat, at, small, spread, roam) => makeShoal({ n, seed, mat, at, small, roam: roam || [1.2, 0.15, 0.8], drift: 0.12, spread, jitter: 0.08 });
-      const shoals = [], kinds = [[82, false, 16], [23, false, 18], [22, false, 20], [82, false, 14], [55, false, 10], [57, false, 16], [23, false, 14]];
-      for (let i = 0; i < 40; i++) {
-        const [m, small, n] = kinds[i % kinds.length], b = spot();
-        { const x = b.x + (R() - 0.5) * 2, z = b.z + (R() - 0.5) * 2, S = sh(n, 200 + i, m, [x, topAt(x, z) + 0.2 + R() * 0.15, z], false, [0.8, 0.15, 0.8], [0.5 + R() * 0.6, 0.05, 0.4 + R() * 0.4]); S.clear = 0.08; shoals.push(S); }
+      // one small shoal per slot, between the big fish, low over the coral
+      const sh = (n, seed, mat, at, spread, roam) => makeShoal({ n, seed, mat, at, small: false, roam, drift: 0.12, spread, jitter: 0.06 });
+      const shoals = [], kinds = [82, 23, 22, 55, 57, 23];
+      for (let i = 0; i < 12; i++) {
+        const b = slot(i / 12, (i % 2 ? -1 : 1) * 0.7), S = sh(9, 200 + i, kinds[i % kinds.length], [b.x, FLOOR + b.h + 0.22, b.z], [0.6, 0.12, 0.6], [0.35, 0.04, 0.3]);
+        S.clear = 0.08; shoals.push(S);
       }
-      // clownfish colonies: a few anemones on the reef, each with its family of clownfish
+      // clownfish colonies: an anemone every so often, each with its pair
       const anems = [];
-      for (let i = 0; i < 14; i++) {
-        const { x, z } = spot();
+      for (let i = 0; i < 6; i++) {
+        const { x, z } = slot((i + 0.25) / 6, 0.2);
         const A = makeAnemone(x, z, 16, 300 + i, 0.32); A.y = topAt(x, z) - 0.05; anems.push(A);
-        const fam = 2 + (R() * 3 | 0);
-        for (let k = 0; k < fam; k++) {
-          const o = makeSwimmer(KINDS.clownlet, { route: fishRoute(x, z, 0.12 + R() * 0.15, A.y + 0.32 + R() * 0.1, R), base: 0.1 + R() * 0.05, start: R(), seed: R() * 9 });
-          o.scale = k ? 0.11 + R() * 0.03 : 0.16; o.clear = 0.08; animals.push(o); if (!k) A.fish = o;
+        for (let k = 0; k < 2; k++) {
+          const o = makeSwimmer(KINDS.clownlet, { route: fishRoute(x, z, 0.14 + 0.08 * k, A.y + 0.34 + 0.06 * k, R), base: 0.1 + R() * 0.04, start: k * 0.5, seed: R() * 9 });
+          o.scale = k ? 0.12 : 0.16; o.clear = 0.08; animals.push(o); if (!k) A.fish = o;
         }
       }
       const M = makeMeadow(2600, 9, -17, 17, -13, 8, 0.18, 0.4), keep = [];
@@ -2638,6 +2648,19 @@ function step(dt) {
     const need = Math.max(0, topAt(o.cx, o.cz) + (o.clear || 0.3) - o.cy);
     o.lift = (o.lift || 0) + (need - (o.lift || 0)) * Math.min(1, dt * 3);
     o.cy += o.lift;
+  }
+  if (current === 'reef') {
+    // keep the big swimmers apart: each holds a little offset from its path that
+    // grows while it is too close to another and fades once it is clear
+    const big = animals.filter(o => o.sepR);
+    for (const o of big) { const k = Math.exp(-dt * 0.4); o.spx = (o.spx || 0) * k; o.spy = (o.spy || 0) * k; o.spz = (o.spz || 0) * k; o.cx += o.spx; o.cy += o.spy; o.cz += o.spz; }
+    for (let i = 0; i < big.length; i++) for (let j = i + 1; j < big.length; j++) {
+      const A = big[i], B = big[j], dx = B.cx - A.cx, dy = B.cy - A.cy, dz = B.cz - A.cz, d = Math.hypot(dx, dy, dz) || 1e-3, need = A.sepR + B.sepR;
+      if (d >= need) continue;
+      const push = (need - d) / d * 0.5;
+      A.spx -= dx * push; A.spy -= dy * push * 0.5; A.spz -= dz * push; B.spx += dx * push; B.spy += dy * push * 0.5; B.spz += dz * push;
+      A.cx -= dx * push; A.cz -= dz * push; B.cx += dx * push; B.cz += dz * push;
+    }
   }
   hunt(dt); crittersStep(dt); shoals(dt); bubbles(dt); driftSnow(dt);
 }
