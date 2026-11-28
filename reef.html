@@ -381,8 +381,8 @@ function setCamera(dt) {
   let dh = h - cam.head; dh = ((dh + Math.PI) % TAU + TAU) % TAU - Math.PI;
   cam.head += dh * (1 - Math.exp(-dt * 2.2));
   if (k > 0) { const G = animals[0]; TX = G.cx + (D.cx - G.cx) * k; TY = G.cy + (D.cy - G.cy) * k; TZ = G.cz + (D.cz - G.cz) * k; } else { TX = A.cx; TY = A.cy; TZ = A.cz; }
-  const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0)) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
-  const pitch = clamp(VIEW.pitch - 0.35 * k + cam.dpitch, -1.53, 1.53);   // up to almost straight down
+  const yaw = (VIEW.fixed !== undefined ? VIEW.fixed : -cam.head + (VIEW.yaw || 0) + (-Math.PI / 2 + 0.35) * k) + cam.dyaw + (REDUCED ? 0 : 0.12 * Math.sin(TIME * 0.07));
+  const pitch = clamp(VIEW.pitch - 0.25 * k + cam.dpitch, -1.53, 1.53);   // up to almost straight down
   const dist = (VIEW.dist || cam.dist) * (1 - 0.35 * k);
   CX = TX + dist * Math.cos(pitch) * Math.sin(yaw);
   CY = TY + dist * Math.sin(pitch);
@@ -392,7 +392,7 @@ function setCamera(dt) {
   const r = Math.hypot(FZ, FX) || 1e-6; RX = -FZ / r; RZ = FX / r;   // right = forward x up
   UX = -RZ * FY; UY = RZ * FX - RX * FZ; UZ = RX * FY;              // up = right x forward
   ASP = CW / CH;
-  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * (1 - 0.45 * k) * ASP), (COLS / 2) * dist / (VIEW.side * (1 - 0.45 * k))) * (cam.zoom || 1) * TUNE.zoom;
+  FOC = Math.min((ROWS / 2) * dist / (VIEW.half * (1 - 0.3 * k) * ASP), (COLS / 2) * dist / (VIEW.side * (1 - 0.3 * k))) * (cam.zoom || 1) * TUNE.zoom;
 }
 
 // [projection]
@@ -1637,15 +1637,16 @@ const WHALE_PROFILE = {
   S: [0, .02, .06, .12, .2, .3, .4, .5, .6, .7, .8, .88, .95, 1],
   T: [.02, .05, .07, .09, .11, .125, .13, .125, .11, .09, .066, .045, .03, .024],
   B: [.02, .05, .075, .1, .12, .132, .135, .128, .11, .088, .062, .042, .028, .02],
-  W: [.08, .135, .165, .175, .175, .17, .16, .145, .122, .095, .068, .046, .03, .022] };   // a broad, flat head
+  W: [.088, .149, .182, .193, .193, .187, .176, .16, .134, .105, .075, .051, .033, .024] };   // a broad, flat head
 function whaleSkin(s, th) {
-  const sn = Math.sin(th);
+  const sn = Math.sin(th), cs = Math.cos(th);
   if (sn < -0.35) return 3;                                     // pale belly
-  // spots in rows on the back and flanks, crossed by pale stripes on the body
-  const u = s * 30, v = th * 9, su = u - Math.round(u), sv = v - Math.round(v);
-  if (s > 0.05 && su * su + sv * sv < 0.1) return 2;
-  if (s > 0.2 && s < 0.85 && Math.abs(((s * 18) % 1) - 0.5) < 0.05 && sn > -0.2) return 2;
-  if (sn > 0.2 && (Math.abs(Math.cos(th) - 0.35) < 0.04 || Math.abs(Math.cos(th) + 0.35) < 0.04 || Math.abs(Math.cos(th)) < 0.03) && s > 0.15 && s < 0.85) return 4;   // the three ridges
+  // the three ridges along the back and upper flanks
+  if (sn > 0.15 && s > 0.12 && s < 0.86 && (Math.abs(cs - 0.38) < 0.035 || Math.abs(cs + 0.38) < 0.035 || Math.abs(cs) < 0.03)) return 4;
+  // pale vertical stripes between the ridges on the body, a dense field of spots on the head
+  if (s > 0.2 && s < 0.86 && Math.abs(((s * 20) % 1) - 0.5) < 0.06 && sn > -0.25) return 2;
+  const k = s < 0.2 ? 46 : 28, u = s * k + 0.35 * Math.sin(th * 5), v = th * (s < 0.2 ? 14 : 10), su = u - Math.round(u), sv = v - Math.round(v);
+  if (s > 0.03 && su * su + sv * sv < (s < 0.2 ? 0.08 : 0.11)) return 2;
   return 1;
 }
 function drawWhaleShark(o) {
@@ -1669,7 +1670,7 @@ function drawWhaleShark(o) {
       let m = whaleSkin(s, th);
       const f = fresnel(x, y, z, nx, ny, nz);
       let L = 0.42 + 0.48 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.1 * f * f;
-      if (m === 4) { m = 1; L *= 0.7; }
+      if (m === 4) { m = 2; L = Math.min(1, L * 0.9 + 0.12); }                    // the ridges catch the light
       if (s < 0.025 && sn < 0.3 && sn > -0.5) { m = 4; L = 0.3; }                // the wide mouth
       SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
       plot(x, y, z, L, m, 0, 6, 0.04, SOLID);
@@ -1706,48 +1707,120 @@ function swimEscort(o, dt) {
 }
 
 // [diver]
-// A scuba diver finning slowly over the reef: dark wetsuit, a tank on the back,
-// mask, yellow fins on a steady flutter kick, arms tucked in. Every few seconds
-// a burst of exhaled bubbles rises from the regulator.
+// A scuba diver finning slowly over the reef, drawn from solid, shaded parts:
+// a broad chest and shoulders in a buoyancy vest, hips with a weight belt, a
+// hooded head with a glass mask and regulator, the tank on the back with its
+// valve and hoses, arms bent at the elbow with hands tucked in, and legs with
+// real thighs, knees and calves on a slow flutter kick that bends at the knee,
+// ending in long ribbed fins. Every part is lit from above with a cool rim of
+// light along its edges and a darker underside. Every few seconds a burst of
+// exhaled bubbles rises from the regulator.
 function swimDiver(o, dt) {
-  o.phase += TAU * 0.55 * dt; o.freq = 0.55; o.amp = 1;
+  o.phase += TAU * 0.5 * dt; o.freq = 0.5; o.amp = 1;
   ride(o, dt, 0.35);
+  for (let i = 0; i < 9; i++) o.F[i] *= 0.8;                       // a person is about 1.8 m with fins
   o.breath = (o.breath || 0) - dt;
   if (o.breath < 0) { o.breath = 3.5 + Math.random();
-    const F = o.F; for (let n = 0; n < 26; n++) emit(o.cx + F[0] * 0.5 + F[3] * 0.1, o.cy + F[4] * 0.1 + 0.05, o.cz + F[2] * 0.5 + F[5] * 0.1, (Math.random() - 0.5) * 0.15, 0.25 + Math.random() * 0.3, (Math.random() - 0.5) * 0.15, 0.2 + Math.random() * 0.8, 6); }
+    const F = o.F; for (let n = 0; n < 30; n++) emit(o.cx + F[0] * 0.62 + F[3] * 0.0, o.cy + F[1] * 0.62 + F[4] * 0.02, o.cz + F[2] * 0.62, (Math.random() - 0.5) * 0.15, 0.25 + Math.random() * 0.3, (Math.random() - 0.5) * 0.15, 0.2 + Math.random() * 0.8, 6); }
 }
-function drawDiver(o) {
-  if (!project(o.cx, o.cy, o.cz)) return;
-  const ppu = FOC / PZ, W = (x, y, z) => { toWorld(o, x, y, z); return [WX, WY, WZ]; };
-  const T = (a, b, r0, r1, L, m) => tube(a[0], a[1], a[2], b[0], b[1], b[2], r0, r1, L, m, ppu);
-  const kick = Math.sin(o.phase);
-  // torso, hips and head
-  T(W(0.32, 0, 0), W(-0.28, 0.01, 0), 0.17, 0.15, 0.25, 107);
-  T(W(-0.28, 0.01, 0), W(-0.42, 0, 0), 0.15, 0.12, 0.25, 107);
-  T(W(0.36, 0.01, 0), W(0.5, 0.03, 0), 0.08, 0.1, 0.3, 107);
-  dome(...W(0.56, 0.03, 0), 0.1, 0.1, 107, ppu, () => [1, 1, 0]);
-  // mask and regulator
-  for (const sg of [-1, 1]) { const m = W(0.64, 0.05, 0.04 * sg); plot(m[0], m[1], m[2], 0.9, 86, 79, 0.05, 0, LINE); }
-  { const r = W(0.65, -0.03, 0); plot(r[0], r[1], r[2], 0.7, 101, 111, 0.05, 0, LINE); }
-  // the tank, on the back
-  T(W(0.28, 0.19, 0), W(-0.3, 0.17, 0), 0.085, 0.085, 0.45, 47);
-  dome(...W(0.3, 0.19, 0), 0.06, 0.05, 47, ppu, () => [1, 1, 0]);
-  // arms, tucked along the body
-  for (const sg of [-1, 1]) {
-    const sh = W(0.26, 0.02, 0.18 * sg), el = W(0.08, -0.1, 0.22 * sg), ha = W(0.18, -0.16, 0.12 * sg);
-    T(sh, el, 0.055, 0.05, 0.25, 107); T(el, ha, 0.05, 0.045, 0.25, 107);
-  }
-  // legs on a flutter kick, fins at the ends
-  for (const sg of [-1, 1]) {
-    const k = 0.12 * kick * sg, hip = W(-0.4, 0, 0.08 * sg), knee = W(-0.78, -0.02 + k * 0.5, 0.1 * sg), ank = W(-1.12, k, 0.1 * sg);
-    T(hip, knee, 0.075, 0.06, 0.25, 107); T(knee, ank, 0.06, 0.045, 0.25, 107);
-    const n1 = Math.ceil(0.35 * ppu * 1.6) + 2, n2 = Math.ceil(0.14 * ppu * 1.6) + 2;
-    for (let i = 0; i <= n1; i++) for (let j = 0; j <= n2; j++) {
-      const u = i / n1, v = (j / n2 - 0.5) * (0.1 + 0.08 * u), p = W(-1.12 - 0.36 * u, k + k * 1.2 * u, 0.1 * sg + v);
-      plot(p[0], p[1], p[2], 0.55 + 0.3 * (1 - u), 85, 0, 0, 0.04, SOLID);
+// soft studio-style shading for every part: key light, sky from above, a darker
+// underside, and a rim of light where the surface turns away from the eye
+function litL(x, y, z, nx, ny, nz, base) {
+  const f = fresnel(x, y, z, nx, ny, nz);
+  return base + 0.5 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.14 * Math.max(0, ny) - 0.12 * Math.max(0, -ny) + 0.2 * f * f * f;
+}
+// an ellipsoid in the diver's own frame; tex(u, v, lx, ly, lz) may return [material, glyph, light]
+function blob(o, cx, cy, cz, ax, ay, az, m, ppu, tex) {
+  const nA = clamp(Math.ceil(Math.max(ax, ay, az) * ppu * 2.2), 6, 120), nB = clamp(Math.ceil(TAU * Math.max(ax, ay, az) * ppu * 1.8), 10, 240);
+  for (let i = 0; i <= nA; i++) {
+    const a = i / nA * Math.PI, sa = Math.sin(a), ca = Math.cos(a);
+    for (let j = 0; j < nB; j++) {
+      const b = j / nB * TAU, ux = ca, uy = sa * Math.cos(b), uz = sa * Math.sin(b);
+      const lx = cx + ux * ax, ly = cy + uy * ay, lz = cz + uz * az;
+      normalWorld(o, ux / ax, uy / ay, uz / az); toWorld(o, lx, ly, lz);
+      let mm = m, ch = 0, base = 0.24;
+      if (tex) { const r = tex(ux, uy, uz, lx, ly, lz); if (r) { mm = r[0]; ch = r[1] || 0; base = r[2] !== undefined ? r[2] : base; } }
+      screenNormal();
+      plot(WX, WY, WZ, Math.min(1, litL(WX, WY, WZ, NX, NY, NZ, base)), mm, ch, 0, 0.04, SOLID);
     }
   }
   SNX = SNY = 0;
+}
+// a limb between two points of the diver's frame, fuller in the middle like a muscle
+function limb(o, a, b, r0, r1, bulge, m, ppu) {
+  let dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2]; const len = Math.hypot(dx, dy, dz) || 1e-3; dx /= len; dy /= len; dz /= len;
+  let ex = dy, ey = -dx, ez = 0; if (Math.hypot(ex, ey) < 0.2) { ex = 0; ey = dz; ez = -dy; }
+  const el = Math.hypot(ex, ey, ez); ex /= el; ey /= el; ez /= el;
+  const fx = dy * ez - dz * ey, fy = dz * ex - dx * ez, fz = dx * ey - dy * ex;
+  const nL = clamp(Math.ceil(len * ppu * 2), 4, 90), nP = clamp(Math.ceil(TAU * Math.max(r0, r1) * ppu * 2), 8, 90);
+  for (let i = 0; i <= nL; i++) {
+    const t = i / nL, r = (r0 + (r1 - r0) * t) * (1 + bulge * Math.sin(t * Math.PI)), dr = (r1 - r0) / len;
+    for (let k = 0; k < nP; k++) {
+      const q = k / nP * TAU, cq = Math.cos(q), sq = Math.sin(q);
+      const nx = ex * cq + fx * sq, ny = ey * cq + fy * sq, nz = ez * cq + fz * sq;
+      const lx = a[0] + dx * len * t + nx * r, ly = a[1] + dy * len * t + ny * r, lz = a[2] + dz * len * t + nz * r;
+      normalWorld(o, nx - dx * dr, ny - dy * dr, nz - dz * dr); toWorld(o, lx, ly, lz); screenNormal();
+      plot(WX, WY, WZ, Math.min(1, litL(WX, WY, WZ, NX, NY, NZ, 0.24)), m, 0, 0, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+}
+function drawDiver(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ * 0.8, P = o.phase;
+  // torso: chest and shoulders in the vest, a narrower waist, hips and the weight belt
+  blob(o, 0.14, 0, 0, 0.27, 0.16, 0.21, 107, ppu, (ux, uy, uz, lx, ly, lz) => {
+    if (Math.abs(lz) < 0.07 && uy > 0.2) return [108, 0, 0.18];                    // vest panel on the back
+    if (uy < -0.55) return [108, 0, 0.2];                                           // vest front, at the chest
+    return null;
+  });
+  blob(o, -0.2, -0.005, 0, 0.21, 0.135, 0.17, 107, ppu, (ux, uy, uz, lx) => Math.abs(lx + 0.06) < 0.025 ? [101, 0, 0.3] : null);   // weight belt
+  // the tank, valve and hoses
+  const tankA = [0.3, 0.2, 0], tankB = [-0.28, 0.185, 0];
+  limb(o, tankA, tankB, 0.085, 0.085, 0, 47, ppu);
+  blob(o, 0.31, 0.2, 0, 0.05, 0.085, 0.085, 47, ppu); blob(o, -0.29, 0.185, 0, 0.04, 0.085, 0.085, 47, ppu);
+  blob(o, 0.38, 0.21, 0, 0.035, 0.03, 0.03, 101, ppu);                              // valve
+  for (const sg of [-1, 1]) {                                                       // hoses over the shoulders
+    let p0 = [0.38, 0.21, 0];
+    for (let k = 1; k <= 6; k++) { const u = k / 6, p1 = [0.38 + 0.25 * u, 0.21 - 0.25 * u * u, sg * 0.12 * Math.sin(u * Math.PI)];
+      toWorld(o, ...p0); const ax = WX, ay = WY, az = WZ; toWorld(o, ...p1); line(ax, ay, az, WX, WY, WZ, 0.35, 101, 0.05); p0 = p1; }
+  }
+  // the head in its hood, the mask and the regulator
+  limb(o, [0.38, 0.02, 0], [0.48, 0.05, 0], 0.07, 0.075, 0.1, 107, ppu);           // neck
+  blob(o, 0.55, 0.06, 0, 0.115, 0.105, 0.095, 107, ppu, (ux, uy, uz) => {
+    if (ux > 0.55 && uy < 0.15 && uy > -0.6 && Math.abs(uz) < 0.75) return [86, ux > 0.85 && uy > -0.25 ? 79 : 0, 0.45];   // mask glass, catching the light
+    if (ux > 0.45 && uy < 0.25 && uy > -0.7 && Math.abs(uz) < 0.85) return [101, 0, 0.2];                             // mask skirt
+    return null;
+  });
+  blob(o, 0.66, -0.03, 0, 0.035, 0.03, 0.035, 101, ppu);                            // regulator
+  // arms: shoulder, elbow bent, forearm forward, hands loosely together under the chest
+  for (const sg of [-1, 1]) {
+    const sw = 0.03 * Math.sin(P * 0.5 + sg);
+    const sh = [0.3, 0.02, 0.21 * sg], el = [0.14, -0.1 + sw, 0.31 * sg], wr = [0.32, -0.17, 0.16 * sg];
+    blob(o, ...sh, 0.07, 0.07, 0.07, 107, ppu);
+    limb(o, sh, el, 0.06, 0.05, 0.15, 107, ppu); blob(o, ...el, 0.05, 0.05, 0.05, 107, ppu);
+    limb(o, el, wr, 0.05, 0.04, 0.12, 107, ppu); blob(o, wr[0] + 0.04, wr[1], wr[2], 0.05, 0.03, 0.04, 101, ppu);   // gloved hand
+  }
+  // legs: a flutter kick from the hip, the knee bending on the up-stroke, toes pointed into the fins
+  for (const sg of [-1, 1]) {
+    const ph = P + (sg > 0 ? 0 : Math.PI), hipA = 0.16 * Math.sin(ph), bend = 0.15 + 0.3 * Math.max(0, Math.sin(ph + 0.9));
+    const hip = [-0.36, -0.01, 0.1 * sg];
+    const knee = [hip[0] - 0.42 * Math.cos(hipA), hip[1] + 0.42 * Math.sin(hipA), 0.17 * sg];
+    const a2 = hipA + bend, ank = [knee[0] - 0.39 * Math.cos(a2), knee[1] + 0.39 * Math.sin(a2), 0.2 * sg];
+    limb(o, hip, knee, 0.095, 0.07, 0.18, 107, ppu);                                 // thigh
+    blob(o, ...knee, 0.07, 0.07, 0.068, 107, ppu);                                   // knee
+    limb(o, knee, ank, 0.066, 0.045, 0.2, 107, ppu);                                 // calf
+    blob(o, ank[0] - 0.02, ank[1], ank[2], 0.06, 0.045, 0.05, 101, ppu);              // boot
+    // fin: a long blade along the line of the shin, ribs down each side, flexing at the tip
+    const a3 = a2 + 0.15 * Math.sin(ph + 1.6), cx = -Math.cos(a3), cy = Math.sin(a3);
+    const n1 = Math.ceil(0.55 * ppu * 1.8) + 3, n2 = Math.ceil(0.2 * ppu * 1.8) + 3;
+    for (let i = 0; i <= n1; i++) for (let j = 0; j <= n2; j++) {
+      const u = i / n1, w = (j / n2 - 0.5) * (0.1 + 0.12 * u), flex = 0.06 * u * u * Math.sin(ph + 2.2);
+      toWorld(o, ank[0] + cx * 0.55 * u, ank[1] + cy * 0.55 * u + flex, ank[2] + w + sg * 0.1 * u);
+      const rib = Math.abs(Math.abs(j / n2 - 0.5) - 0.5) < 0.12, edgeTip = u > 0.96;
+      plot(WX, WY, WZ, rib || edgeTip ? 0.85 : 0.45 + 0.3 * (1 - u), 85, rib ? 45 : 0, 0, 0.04, SOLID);
+    }
+  }
 }
 
 // [seabed]
@@ -2794,7 +2867,7 @@ function outline() {
 // stand out in their own colours.
 // Distance dims things towards black, which is all the fog it needs. Brightness also picks the
 // glyph: the animals sit high on the ramp, in the dense letters.
-const LV = 14;
+const LV = 24;
 const RAMP = '.:-=+*o08%$QB&@';
 const MATRAMP = { 51: '@@##&&88%%QQBB$$$', 52: 'ooo000888BBBQQQQQ', 58: '@@@@@@######&&&&&', 54: '::iiioooo000088888' };
 const STOPS = [null,
@@ -2904,7 +2977,8 @@ const STOPS = [null,
   [[40, 36, 10], [190, 170, 60], [250, 236, 150]],    // 104 kelp bladders
   [[10, 18, 30], [56, 76, 104], [130, 156, 190]],     // 105 whale shark: blue-grey
   [[150, 156, 160], [226, 232, 236], [255, 255, 255]], // 106 whale shark spots
-  [[34, 40, 56], [118, 132, 160], [206, 216, 236]],   // 107 diver: neoprene
+  [[8, 10, 16], [44, 50, 64], [150, 162, 186]],       // 107 diver: black neoprene, a cool sheen where the light catches it
+  [[14, 26, 40], [40, 92, 150], [140, 196, 246]],     // 108 diver: blue vest
 ];const COLORS = [], GLYPH = [];
 const ANIMAL_MATS = new Set([1, 2, 3, 25, 26, 27, 28, 29, 30, 50, 51, 52, 53, 58, 89, 90, 100, 101]);
 function tint([r, g, b], animal) {
@@ -2920,7 +2994,7 @@ function buildColors() {
   COLORS.length = 0;
   for (let m = 0; m < STOPS.length; m++) for (let l = 0; l < LV; l++) {
   if (!STOPS[m]) { COLORS.push('#000'); continue; }
-  const t = (l + 0.5) / LV, A = t < 0.5 ? STOPS[m][0] : STOPS[m][1], B = t < 0.5 ? STOPS[m][1] : STOPS[m][2], u = t < 0.5 ? t * 2 : t * 2 - 1;
+  const t0 = (l + 0.5) / LV, t = t0 * t0 * (3 - 2 * t0) * 0.35 + t0 * 0.65, A = t < 0.5 ? STOPS[m][0] : STOPS[m][1], B = t < 0.5 ? STOPS[m][1] : STOPS[m][2], u = t < 0.5 ? t * 2 : t * 2 - 1;
   COLORS.push(tint(A.map((v, i) => v + (B[i] - v) * u), ANIMAL_MATS.has(m)));
   }
 }
@@ -2929,6 +3003,7 @@ const counts = new Int32Array(STOPS.length * LV + 1);
 
 // [compose]
 let drawn = 0;
+const NOBOOST = new Set([47, 85, 86, 101, 107, 108]);   // the diver keeps its own shading
 function compose() {
   const n = COLS * ROWS, near = (VIEW.dist || cam.dist) + 0.8 + (VIEW.dist ? 9 : 0);
   counts.fill(0); drawn = 0;
@@ -2936,7 +3011,7 @@ function compose() {
     if (!mat[i]) { bucket[i] = -1; continue; }
     const vis = depth[i] > near ? lum[i] * Math.exp((near - depth[i]) * 0.3 / TUNE.vis) : lum[i];
     if (vis < 0.05) { bucket[i] = -1; continue; }
-    lum[i] = ENV.boost && kind[i] !== GROUND ? Math.min(1, vis * 1.35 + 0.22) : vis;
+    lum[i] = ENV.boost && kind[i] !== GROUND && !NOBOOST.has(mat[i]) ? Math.min(1, vis * 1.35 + 0.22) : vis;
     const b = mat[i] * LV + Math.min(LV - 1, (vis * LV) | 0);
     bucket[i] = b; counts[b + 1]++; drawn++;
   }
@@ -2980,6 +3055,20 @@ function present() {
   vctx.drawImage(bloom, 0, 0, view.width, view.height);
   vctx.globalAlpha = 1; vctx.globalCompositeOperation = 'source-over';
   vctx.drawImage(txt, 0, 0);
+  // light falls off with depth: brighter and a touch cooler near the top, deeper and darker
+  // below, and a soft vignette towards the corners
+  vctx.globalCompositeOperation = 'multiply';
+  const lg = vctx.createLinearGradient(0, 0, 0, view.height);
+  lg.addColorStop(0, 'rgb(255,255,255)'); lg.addColorStop(0.55, 'rgb(244,246,250)'); lg.addColorStop(1, 'rgb(206,212,226)');
+  vctx.fillStyle = lg; vctx.fillRect(0, 0, view.width, view.height);
+  const vg = vctx.createRadialGradient(view.width / 2, view.height * 0.45, Math.min(view.width, view.height) * 0.35, view.width / 2, view.height * 0.45, Math.hypot(view.width, view.height) * 0.62);
+  vg.addColorStop(0, 'rgb(255,255,255)'); vg.addColorStop(1, 'rgb(196,200,212)');
+  vctx.fillStyle = vg; vctx.fillRect(0, 0, view.width, view.height);
+  vctx.globalCompositeOperation = 'screen';
+  const sk = vctx.createLinearGradient(0, 0, 0, view.height * 0.45);
+  sk.addColorStop(0, 'rgba(40,70,100,0.22)'); sk.addColorStop(1, 'rgba(40,70,100,0)');
+  vctx.fillStyle = sk; vctx.fillRect(0, 0, view.width, view.height * 0.45);
+  vctx.globalCompositeOperation = 'source-over';
 }
 
 // [shoals]
