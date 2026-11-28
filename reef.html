@@ -1202,7 +1202,7 @@ function drawPrey() {
 // when it pushes in among the tentacles. Local units: forward x (snout at
 // +0.5), up y, side z.
 const CLOWN_S = [0, .03, .08, .16, .30, .45, .60, .75, .88, 1];
-const CLOWN_H = [0, .075, .125, .175, .222, .238, .218, .165, .11, .085];
+const CLOWN_H = [0, .07, .115, .16, .2, .212, .196, .15, .1, .078];   // a little elongated, as in the film
 function clownH(s) {
   s = clamp(s, 0, 1);
   let k = 0; while (k < CLOWN_S.length - 2 && CLOWN_S[k + 1] < s) k++;
@@ -1318,7 +1318,7 @@ function clownMat(s, v) {
 function hatchFin(o, pts, ch) {               // pts: [x, y, z, edge, light] in local units
   for (const p of pts) {
     toWorld(o, p[0], p[1], p[2]);
-    plot(WX, WY, WZ, p[3] ? 0.5 : 0.45 + 0.45 * p[4], p[3] ? 53 : 51, p[3] ? 0 : ch, 0, 0.04, SOLID);
+    plot(WX, WY, WZ, p[3] ? 0.5 : 0.45 + 0.45 * p[4], p[3] ? 53 : 51, p[3] ? 0 : (p[5] || ch), 0, 0.04, SOLID);
   }
 }
 function finGlyph(o, x0, y0, z0, x1, y1, z1) {
@@ -1343,7 +1343,7 @@ function drawClown(o) {
       let m = clownMat(s, sn);
       if (m === 51 && sn < -0.3 && sh < 0.22) m = 58;
       screenNormal();
-      const L = m === 53 ? 0.45 : m === 58 ? 0.4 + 0.5 * (0.22 - sh) / 0.22 * 0.6 + 0.2 * f : 0.44 + 0.52 * sh + 0.16 * (1 - s) * (sn > -0.2 ? 1 : 0) + 0.08 * f * f;
+      const L = m === 53 ? 0.45 : m === 58 ? 0.35 + 0.35 * (0.22 - sh) / 0.22 + 0.15 * f : 0.3 + 0.7 * sh * (0.55 + 0.45 * Math.max(0, sn)) + 0.12 * (1 - s) * (sn > -0.2 ? 1 : 0) + 0.06 * f * f;
       plot(WX, WY, WZ, Math.min(1, L), m, m === 53 ? 124 : 0, 0, 0.04, SOLID);
     }
   }
@@ -1362,34 +1362,39 @@ function drawClown(o) {
   }
   const pts = [], pv = (x, y, z, e, l) => pts.push([x, y, z, e, l]);
   const nd = clamp(Math.ceil(0.55 * ppu * 1.8), 12, 220), nh = clamp(Math.ceil(0.18 * ppu * 1.8), 4, 90);
-  // dorsal fin: one soft rounded crest, rays raked back
+  // dorsal fin, as in the film: long, the front spines upright (|||), a notch, then the
+  // soft rear part taller and raked back (///); a thin dark margin along the top
   for (let i = 0; i <= nd; i++) {
-    const t = i / nd, s = 0.2 + 0.58 * t;
-    const fh = 0.09 * Math.sin(Math.min(1, t * 1.05) * Math.PI) ** 0.8 + 0.05 * smooth(0.45, 0.8, t) * Math.sin(t * Math.PI) + 0.015;
+    const t = i / nd, s = 0.18 + 0.64 * t, spiny = t < 0.42;
+    const fh = spiny ? 0.11 * Math.sin(Math.min(1, t / 0.42) * Math.PI * 0.85 + 0.25) + 0.02
+                     : 0.17 * Math.sin((t - 0.38) / 0.62 * Math.PI) ** 0.75 + 0.025;
+    const rake = spiny ? 0.01 : 0.03 + 0.09 * (t - 0.42), y0 = clownH(s) * 0.96 - 0.02 * (1 - s);
+    const g = finGlyph(o, 0.5 - s, y0, wag(o, s), 0.5 - s - rake, y0 + fh, wag(o, s));
     for (let j = 0; j <= nh; j++) {
       const v = j / nh;
-      pv(0.5 - s - 0.07 * v, clownH(s) * 0.97 + v * fh - 0.02 * (1 - s), wag(o, s), v > 0.9, 1 - 0.4 * v);
+      pts.push([0.5 - s - rake * v, y0 + v * fh, wag(o, s), v > 0.9, 1 - 0.35 * v, g]);
     }
   }
-  hatchFin(o, pts.splice(0), finGlyph(o, 0.1, 0.24, 0, 0.0, 0.34, 0));
-  // anal and pelvic fins below, raked back the other way
+  hatchFin(o, pts.splice(0), 124);
+  // anal fin and the pelvic fins below, raked back the other way (\\\)
   for (let i = 0; i <= nd / 2; i++) {
-    const t = i / (nd / 2), s = 0.6 + 0.2 * t, fh = 0.1 * Math.sin(t * Math.PI) + 0.01;
-    for (let j = 0; j <= nh; j++) { const v = j / nh; pv(0.5 - s - 0.06 * v, -clownH(s) * 0.95 - v * fh - 0.02, wag(o, s), v > 0.88, 0.6); }
+    const t = i / (nd / 2), s = 0.58 + 0.24 * t, fh = 0.13 * Math.sin(t * Math.PI) ** 0.8 + 0.01, y0 = -clownH(s) * 0.95 - 0.02;
+    const g = finGlyph(o, 0.5 - s, y0, wag(o, s), 0.5 - s - 0.07, y0 - fh, wag(o, s));
+    for (let j = 0; j <= nh; j++) { const v = j / nh; pts.push([0.5 - s - 0.07 * v, y0 - v * fh, wag(o, s), v > 0.88, 0.55, g]); }
   }
   for (const sg of [-1, 1]) for (let i = 0; i <= nh; i++) for (let j = 0; j <= nh / 2; j++) {
     const v = i / nh, u = j / (nh / 2);
-    pv(0.5 - 0.3 - 0.11 * v - 0.04 * u, -clownH(0.3) * 0.9 - 0.09 * v, sg * (0.03 + 0.04 * u) + wag(o, 0.3), v > 0.88, 0.55);
+    pts.push([0.5 - 0.3 - 0.12 * v - 0.04 * u, -clownH(0.3) * 0.9 - 0.11 * v, sg * (0.03 + 0.04 * u) + wag(o, 0.3), v > 0.88, 0.5]);
   }
   hatchFin(o, pts.splice(0), finGlyph(o, -0.1, -0.24, 0, -0.2, -0.34, 0));
   // tail fin: a rounded fan of rays that swings with the tail
   const sw = Math.atan(3.2 * (0.06 + 0.05 * o.burst) * o.amp * Math.cos(o.phase - 3.2)) * 1.2;
   const nr = clamp(Math.ceil(0.28 * ppu * 1.8), 6, 120), na = clamp(Math.ceil(0.5 * ppu * 1.8), 8, 160), zt = wag(o, 1);
   for (let j = 0; j <= na; j++) {
-    const a = (j / na * 2 - 1) * 0.9, R = 0.25 * (1 - 0.1 * a * a);
+    const a = (j / na * 2 - 1) * 0.95, R = 0.3 * (1 - 0.08 * a * a);
     const ch = finGlyph(o, -0.5, 0, zt, -0.5 - Math.cos(a) * 0.1 * Math.cos(sw), Math.sin(a) * 0.1, zt - Math.cos(a) * 0.1 * Math.sin(sw));
     for (let i = 0; i <= nr; i++) {
-      const r = 0.03 + R * i / nr, d = r * Math.cos(a), edge = i / nr > 0.9;
+      const r = 0.03 + R * i / nr, d = r * Math.cos(a), edge = i / nr > 0.8;   // the black margin of the tail
       toWorld(o, -0.5 - d * Math.cos(sw), Math.sin(a) * r * 1.1, zt - d * Math.sin(sw));
       plot(WX, WY, WZ, edge ? 0.5 : 0.5 + 0.4 * (1 - i / nr), edge ? 53 : 51, edge ? 0 : ch, 0, 0.04, SOLID);
     }
@@ -3110,12 +3115,12 @@ const SCENES = {
       M.n = keep.length;
       ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
-  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
+  clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, font: 1.6, half: 0.36, side: 0.6, pitch: 0.12 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
       const R = rng(42), pinks = [];
       animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 1 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 2 })];
-      const home = { x: 0.1, z: -0.5, rx: 0.85, rz: 0.35, y0: FLOOR + 0.82, y1: FLOOR + 1.2, yIn: FLOOR + 0.66, zIn: -1.0 };
+      const home = { x: 0.1, z: 0.7, rx: 0.85, rz: 0.25, y0: FLOOR + 1.0, y1: FLOOR + 1.45, yIn: FLOOR + 0.66, zIn: -1.0 };
       initFree(animals[0], home, R); initFree(animals[1], home, rng(77)); animals[1].scale = 0.85;
       animals[1].cx = animals[0].cx + 1.5; animals[1].mate = animals[0];
       animals[0].group = animals[1].group = [animals[0], animals[1]]; animals[0].sep = animals[1].sep = 1.4;
