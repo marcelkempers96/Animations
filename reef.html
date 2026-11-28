@@ -1508,15 +1508,15 @@ function drawAnemones(t, dt) {
           // tall enough for the fins, wide enough for the arm's own thickness
           const sc = F.scale || 1, G = F.F, ux = nx - F.cx, uy = ny - F.cy, uz = nz - F.cz;
           const gx = Math.hypot(G[0], G[1], G[2]) || 1, gy = Math.hypot(G[3], G[4], G[5]) || 1, gz = Math.hypot(G[6], G[7], G[8]) || 1;
-          const lx = (ux * G[0] + uy * G[1] + uz * G[2]) / gx / sc + 0.12, ly = (ux * G[3] + uy * G[4] + uz * G[5]) / gy / sc, lz = (ux * G[6] + uy * G[7] + uz * G[8]) / gz / sc;
-          const ed = Math.hypot(lx / 0.78, ly / 0.42, lz / 0.26);
+          const lx = (ux * G[0] + uy * G[1] + uz * G[2]) / gx / sc + 0.15, ly = (ux * G[3] + uy * G[4] + uz * G[5]) / gy / sc, lz = (ux * G[6] + uy * G[7] + uz * G[8]) / gz / sc;
+          const ed = Math.hypot(lx / 0.7, ly / 0.33, lz / 0.215);   // the fish's skin plus the arm's own thickness, no more
           if (ed < 1 && ed > 1e-4) {
             // out to the skin on the side the arm came from, never through to the far side
             const qx = px - F.cx, qy = py - F.cy, qz = pz - F.cz;
-            let ax = (qx * G[0] + qy * G[1] + qz * G[2]) / gx / sc + 0.12, ay = (qx * G[3] + qy * G[4] + qz * G[5]) / gy / sc, az = (qx * G[6] + qy * G[7] + qz * G[8]) / gz / sc;
+            let ax = (qx * G[0] + qy * G[1] + qz * G[2]) / gx / sc + 0.15, ay = (qx * G[3] + qy * G[4] + qz * G[5]) / gy / sc, az = (qx * G[6] + qy * G[7] + qz * G[8]) / gz / sc;
             if (ax * lx + ay * ly + az * lz < 0.2 * Math.hypot(ax, ay, az) * Math.hypot(lx, ly, lz)) { ax = (ax + lx) * 0.5; ay = (ay + ly) * 0.5; az = (az + lz) * 0.5; }
             else { ax = lx; ay = ly; az = lz; }
-            const ea = Math.hypot(ax / 0.78, ay / 0.42, az / 0.26) || 1e-3, k2 = 1.08 / ea;
+            const ea = Math.hypot(ax / 0.7, ay / 0.33, az / 0.215) || 1e-3, k2 = 1.0 / ea;
             const px_ = ax * k2 - lx, py_ = ay * k2 - ly, pz_ = az * k2 - lz;
             const dx_ = (G[0] / gx * px_ + G[3] / gy * py_ + G[6] / gz * pz_) * sc, dy_ = (G[1] / gx * px_ + G[4] / gy * py_ + G[7] / gz * pz_) * sc, dz_ = (G[2] / gx * px_ + G[5] / gy * py_ + G[8] / gz * pz_) * sc;
             nx += dx_; ny += dy_; nz += dz_;
