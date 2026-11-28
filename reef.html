@@ -207,11 +207,14 @@ input[type="range"]:active::-webkit-slider-thumb { border-width: 8px; }
     <div class="bar" id="ctrl">
       <div class="seg" role="group" aria-label="Scene">
         <button type="button" data-sc="reef" aria-pressed="true">Reef</button>
+        <button type="button" data-sc="carib" aria-pressed="false">Caribbean</button>
         <button type="button" data-sc="clown" aria-pressed="false">Clownfish</button>
         <button type="button" data-sc="dolphins" aria-pressed="false">Dolphins</button>
         <button type="button" data-sc="shark" aria-pressed="false">Shark</button>
         <button type="button" data-sc="turtle" aria-pressed="false">Turtle</button>
         <button type="button" data-sc="manta" aria-pressed="false">Manta</button>
+        <button type="button" data-sc="sealion" aria-pressed="false">Sea lion</button>
+        <button type="button" data-sc="whaleshark" aria-pressed="false">Whale shark</button>
       </div>
       <div class="row">
         <span class="hint" id="hint">drag to look around</span>
@@ -435,6 +438,9 @@ const ROUTE_POD = [[-11, -0.4, -5.2], [-4, -0.7, -5.4], [3, -0.3, -5.0], [11, -0
 // once a lap it pushes deep into the arms
 const CLOWN_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = i / 10 * TAU; return [0.65 * Math.cos(a), -0.72 + 0.1 * Math.sin(2 * a), -0.5 + 0.3 * Math.sin(a)]; });
 const TURTLE_ROUTE = [[-4, -0.25, 0.6], [-1, 0.05, 1.0], [2, -0.1, 0.6], [4, 0.15, -0.6], [2.5, 0, -2.2], [-1, -0.2, -2.4], [-3.8, 0.05, -1.4]];
+// the sea lion weaves through the kelp, rising and dropping as it goes
+const SEALION_ROUTE = [[-6, -0.6, 0.5], [-3.5, 0.3, -0.6], [-1, -0.8, 0.8], [1.5, 0.4, -0.2], [3.8, -0.4, 1.0], [6, 0.5, -0.8], [5, -0.9, -3.6], [2, 0.2, -5.2], [-1, -0.7, -3.6], [-3.6, 0.6, -5.0], [-6.4, -0.3, -2.6]];
+const WHALE_ROUTE = Array.from({ length: 10 }, (_, i) => { const a = -i / 10 * TAU; return [6.5 * Math.cos(a), 0.55 + 0.1 * Math.sin(2 * a), -2 + 5 * Math.sin(a)]; });
 const MANTA_ROUTE = [[-5, 0.6, 0.2], [-2, 0.8, 1.4], [1.5, 0.55, 1.2], [4.5, 0.85, -0.2], [3, 0.6, -2.6], [0, 0.9, -1.6], [-2.6, 0.55, -2.8]];
 // the reef camera drifts in a wide loop over the whole reef, looking down
 const REEF_ROUTE = Array.from({ length: 14 }, (_, i) => { const a = -i / 14 * TAU; return [5.5 * Math.cos(a), FLOOR + 0.25, -2.5 + 5.5 * Math.sin(a)]; });
@@ -595,7 +601,7 @@ function swimDolphin(o, dt) {
   o.roll += (clamp(turn * 2.5, -0.35, 0.35) - o.roll) * Math.min(1, dt * 2);
   const air = BP[(SP >> 1) * 3 + 1] > SURF;
   o.amp += ((air ? 0.1 : 1) - o.amp) * Math.min(1, dt * 4);
-  const cr = Math.cos(o.roll), sr = Math.sin(o.roll);
+  const cr = Math.cos(o.roll + (o.spin || 0)), sr = Math.sin(o.roll + (o.spin || 0));
   for (let i = 0; i < SP; i++) {
     const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
     let tx = BP[a] - BP[b], ty = BP[a + 1] - BP[b + 1], tz = BP[a + 2] - BP[b + 2];
@@ -769,7 +775,7 @@ function swimShark(o, dt) {
   // A shark's head and chest are stiff: through a turn only the back half bends.
   // The front 45% is a straight line along the body's direction at that point.
   {
-    const j = Math.round(0.45 * (SP - 1)), k = j * 3, k2 = (j + 4) * 3;
+    const j = Math.round((o.kind.stiff !== undefined ? o.kind.stiff : 0.45) * (SP - 1)), k = j * 3, k2 = (j + 4) * 3;
     let tx = BP[k] - BP[k2], ty = BP[k + 1] - BP[k2 + 1], tz = BP[k + 2] - BP[k2 + 2]; const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
     for (let i = 0; i < j; i++) { const u = (j - i) / (SP - 1) * BODY, q = i * 3; BP[q] = BP[k] + tx * u; BP[q + 1] = BP[k + 1] + ty * u; BP[q + 2] = BP[k + 2] + tz * u; }
   }
@@ -777,7 +783,7 @@ function swimShark(o, dt) {
   const ax = BP[0] - BP[24], az = BP[2] - BP[26], bx = BP[48] - BP[72], bz = BP[50] - BP[74];
   const turn = (ax * bz - az * bx) / (Math.hypot(ax, az) * Math.hypot(bx, bz) + 1e-6);
   o.roll += (clamp(turn * 2, -0.3, 0.3) - o.roll) * Math.min(1, dt * 2);
-  const cr = Math.cos(o.roll), sr = Math.sin(o.roll);
+  const cr = Math.cos(o.roll + (o.spin || 0)), sr = Math.sin(o.roll + (o.spin || 0));
   for (let i = 0; i < SP; i++) {
     const a = Math.max(0, i - 1) * 3, b = Math.min(SP - 1, i + 1) * 3, k = i * 3;
     let tx = BP[a] - BP[b], ty = BP[a + 1] - BP[b + 1], tz = BP[a + 2] - BP[b + 2];
@@ -789,7 +795,7 @@ function swimShark(o, dt) {
     sx = sx * cr - ux * sr; sy = sy * cr - uy * sr; sz = sz * cr - uz * sr;
     BU[k] = rux; BU[k + 1] = ruy; BU[k + 2] = ruz;
     const s = i / (SP - 1);
-    const off = o.amp * (0.12 * smooth(0.2, 1, s) ** 1.5 - 0.018 * (1 - s)) * Math.sin(o.phase - 5.2 * s);
+    const off = (o.kind.flex || 1) * o.amp * (0.12 * smooth(0.2, 1, s) ** 1.5 - 0.018 * (1 - s)) * Math.sin(o.phase - 5.2 * s);
     SPn[k] = BP[k] + sx * off; SPn[k + 1] = BP[k + 1] + sy * off; SPn[k + 2] = BP[k + 2] + sz * off;
   }
   // frames from the final, swaying spine: the tail fin yaws with the wave
@@ -1473,6 +1479,194 @@ function drawAnemones(t, dt) {
   SNX = SNY = 0;
 }
 
+// [sea-lion]
+// A California sea lion. Unlike a dolphin or a shark it flies with its front
+// flippers: a long sweeping stroke, a glide, another stroke. The body is
+// supple, so it bends easily through the kelp, and now and then it throws in
+// a lazy barrel roll. Back flippers trail and steer.
+const SEALION_PROFILE = {
+  S: [0, .03, .07, .11, .16, .21, .28, .37, .47, .57, .67, .77, .86, .94, 1],
+  T: [.006, .03, .055, .068, .064, .072, .1, .122, .128, .118, .098, .072, .048, .03, .018],
+  B: [.005, .026, .048, .06, .058, .07, .1, .124, .13, .12, .098, .07, .045, .026, .014],
+  W: [.006, .03, .056, .07, .066, .075, .104, .126, .13, .12, .1, .074, .05, .032, .02] };
+function swimSeaLion(o, dt) {
+  o.stroke = (o.stroke || 0) + dt * 0.75;
+  const pull = Math.max(0, Math.sin(o.stroke * TAU));       // the power stroke of the fore flippers
+  o.base = 0.75 + 0.75 * pull;
+  // a barrel roll now and then
+  o.rollT = (o.rollT === undefined ? 6 : o.rollT) - dt;
+  if (o.rollT < 0) { o.spinGoal = (o.spinGoal || 0) + TAU * (Math.random() < 0.5 ? 1 : -1); o.rollT = 7 + Math.random() * 6; }
+  o.spin = (o.spin || 0) + ((o.spinGoal || 0) - (o.spin || 0)) * Math.min(1, dt * 1.6);
+  swimShark(o, dt);
+  o.freq = 0.75; o.amp = 0.3;
+}
+function drawSeaLion(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ;
+  if (PX < -ppu * 2 || PX > COLS + ppu * 2) return;
+  const nS = clamp(Math.ceil(BODY * ppu * 2), 40, 800), nT = clamp(Math.ceil(TAU * 0.14 * ppu * 2.2), 20, 280);
+  for (let a = 0; a <= nS; a++) {
+    const s = a / nS;
+    profile(s + 0.004); const t2 = PRT, b2 = PRB, w2 = PRW;
+    profile(s); frameAt(o, s);
+    const dT = (t2 - PRT) / (0.004 * BODY), dB = (b2 - PRB) / (0.004 * BODY), dW = (w2 - PRW) / (0.004 * BODY);
+    for (let b = 0; b < nT; b++) {
+      const th = b / nT * TAU, c = Math.cos(th), sn = Math.sin(th), hv = sn > 0 ? PRT : PRB;
+      const vert = hv * sn, lat = PRW * c;
+      const x = FPX + FUX * vert + FSX * lat, y = FPY + FUY * vert + FSY * lat, z = FPZ + FUZ * vert + FSZ * lat;
+      let nu = sn / hv, ns = c / PRW; const l0 = Math.hypot(nu, ns); nu /= l0; ns /= l0;
+      const na = (sn > 0 ? dT : dB) * Math.abs(sn) + dW * Math.abs(c);
+      let nx = FUX * nu + FSX * ns + FTX * na, ny = FUY * nu + FSY * ns + FTY * na, nz = FUZ * nu + FSZ * ns + FTZ * na;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      const m = sn > 0.35 ? 1 : sn < -0.4 ? 3 : 2;          // dark back, caramel flanks, pale belly
+      const f = fresnel(x, y, z, nx, ny, nz);
+      const L = 0.45 + 0.45 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.12 * f * f;
+      SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+      plot(x, y, z, L, m, 0, 6, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+  // big dark eyes, and whiskers fanning from the muzzle
+  frameAt(o, 0.075); profile(0.075);
+  for (const sg of [-1, 1]) {
+    const v = PRT * 0.35, w = PRW * 0.92 * sg;
+    plot(FPX + FUX * v + FSX * w, FPY + FUY * v + FSY * w, FPZ + FUZ * v + FSZ * w, 0.5, 4, 64, 0.05, 0, LINE);
+    if (ppu > 18) { frameAt(o, 0.03); profile(0.03);
+      for (let k = -1; k <= 1; k++) { const bx = FPX + FSX * PRW * sg, by = FPY + FUY * k * 0.01, bz = FPZ + FSZ * PRW * sg;
+        line(bx, by, bz, bx + FSX * 0.08 * sg - FTX * 0.03, by + FUY * k * 0.025, bz + FSZ * 0.08 * sg - FTZ * 0.03, 0.55, 52, 0.05); }
+      frameAt(o, 0.075); profile(0.075); }
+  }
+  // fore flippers: long, sweeping down and back on the stroke, feathered on the glide
+  const st = Math.sin((o.stroke || 0) * TAU);
+  for (const sg of [-1, 1]) sheet(o, 0.3, -0.35, 0.85 * sg, -0.25 - 0.45 * st, 1 * sg, 0.35 + 0.35 * Math.max(0, st), 0.34, 0.11, 2, 1, ppu);
+  // hind flippers: trailing, splayed, a little waggle
+  const wg = 0.25 * Math.sin(o.phase * 1.3);
+  for (const sg of [-1, 1]) sheet(o, 0.95, 0, 0.6 * sg, wg * sg, 0.35 * sg, 1, 0.2, 0.09, 2, 1, ppu);
+}
+
+// [kelp]
+// A giant kelp forest: stalks rising from the rocks to the surface, buoyed by a
+// gas bladder at the base of every blade, leaning with the swell. At the top the
+// fronds spread over the surface as a canopy. Anything swimming past pushes
+// the stalks aside, and they sway back.
+function makeKelp(n, seed, avoid) {
+  const R = rng(seed), K = [];
+  for (let i = 0; i < n * 4 && K.length < n; i++) {
+    const x = -9 + R() * 18, z = -8 + R() * 11;
+    if (avoid && avoid(x, z)) continue;
+    if (K.some(k => Math.hypot(k.x - x, k.z - z) < 0.75)) continue;
+    K.push({ x, z, h: (SURF - FLOOR) * (0.9 + R() * 0.15), ph: R() * TAU, bx: 0, bz: 0, tone: R() });
+  }
+  return K;
+}
+function drawKelp(t, dt) {
+  const k = 1 - Math.exp(-(dt || 0) * 1.5);
+  for (const K of ENV.kelp || []) {
+    if (Math.abs(K.x - TX) > 9 || Math.abs(K.z - TZ) > 8) continue;
+    // push from the swimmers, remembered so the stalk springs back slowly
+    let px = 0, pz = 0;
+    for (const o of animals) { const dx = K.x - o.cx, dz = K.z - o.cz, d = Math.hypot(dx, dz); if (d < 1.1 && d > 1e-3) { const f = (1.1 - d) / d * 0.8; px += dx * f; pz += dz * f; } }
+    K.bx += (px - K.bx) * k; K.bz += (pz - K.bz) * k;
+    const N = 16;
+    let x0 = K.x, y0 = FLOOR, z0 = K.z;
+    for (let j = 1; j <= N; j++) {
+      const s = j / N, sw = 0.35 * Math.sin(t * 0.45 + K.ph + s * 1.5) * s + 0.12 * Math.sin(t * 1.1 + K.ph * 2 + s * 3) * s;
+      const x1 = K.x + (sw + K.bx * s * s) * 0.9, y1 = FLOOR + K.h * s, z1 = K.z + 0.2 * sw * Math.sin(K.ph) + K.bz * s * s * 0.9;
+      tube(x0, y0, z0, x1, y1, z1, 0.022, 0.02, 0.45 + 0.3 * s, 103, FOC / Math.max(0.5, Math.hypot(x1 - CX, y1 - CY, z1 - CZ)));
+      // a blade on alternate sides, with its bladder at the root
+      const side = j % 2 ? 1 : -1, bl = 0.34 + 0.1 * Math.sin(K.ph + j), dir = K.ph + j * 2.4;
+      const ex = Math.cos(dir) * side, ez = Math.sin(dir) * side, wave = 0.05 * Math.sin(t * 1.7 + j + K.ph);
+      plot(x1, y1, z1, 0.75, 104, 111, 0, 0, LINE);
+      for (let q = 1; q <= 3; q++) {
+        const u = q / 3, bx = x1 + ex * bl * u, by = y1 - 0.08 * u + wave * u, bz = z1 + ez * bl * u;
+        for (const w of [-0.025, 0, 0.025]) line(x1 + ex * bl * (u - 1 / 3), y1 - 0.08 * (u - 1 / 3) + w * Math.sin(u * Math.PI), z1 + ez * bl * (u - 1 / 3), bx, by + w * Math.sin(u * Math.PI), bz, 0.55 + 0.3 * K.tone + 0.15 * s - Math.abs(w) * 4, 102, 0);
+      }
+      x0 = x1; y0 = y1; z0 = z1;
+    }
+    // the canopy: fronds lying along the surface
+    for (let f = 0; f < 5; f++) {
+      const a = K.ph + f * 1.3, len = 0.6 + 0.3 * Math.sin(K.ph * 3 + f);
+      let fx = x0, fz = z0;
+      for (let q = 1; q <= 4; q++) {
+        const nx = fx + Math.cos(a + 0.2 * Math.sin(t * 0.6 + q)) * len / 4, nz = fz + Math.sin(a) * len / 4;
+        line(fx, SURF - 0.04, fz, nx, SURF - 0.04 + 0.02 * Math.sin(t + q), nz, 0.45 + 0.25 * K.tone, 102, 0);
+        fx = nx; fz = nz;
+      }
+    }
+  }
+}
+
+// [whale-shark]
+// A whale shark, the biggest fish in the sea: a broad flat head with the mouth
+// right at the front, three ridges down the back, and a checkerboard of pale
+// spots and stripes over dark blue-grey. It cruises slowly near the surface,
+// filtering plankton, with a little escort of golden trevally ahead of its mouth
+// and remoras riding under its belly.
+const WHALE_PROFILE = {
+  S: [0, .02, .06, .12, .2, .3, .4, .5, .6, .7, .8, .88, .95, 1],
+  T: [.02, .05, .07, .09, .11, .125, .13, .125, .11, .09, .066, .045, .03, .024],
+  B: [.02, .05, .075, .1, .12, .132, .135, .128, .11, .088, .062, .042, .028, .02],
+  W: [.08, .135, .165, .175, .175, .17, .16, .145, .122, .095, .068, .046, .03, .022] };   // a broad, flat head
+function whaleSkin(s, th) {
+  const sn = Math.sin(th);
+  if (sn < -0.35) return 3;                                     // pale belly
+  // spots in rows on the back and flanks, crossed by pale stripes on the body
+  const u = s * 30, v = th * 9, su = u - Math.round(u), sv = v - Math.round(v);
+  if (s > 0.05 && su * su + sv * sv < 0.1) return 2;
+  if (s > 0.2 && s < 0.85 && Math.abs(((s * 18) % 1) - 0.5) < 0.05 && sn > -0.2) return 2;
+  if (sn > 0.2 && (Math.abs(Math.cos(th) - 0.35) < 0.04 || Math.abs(Math.cos(th) + 0.35) < 0.04 || Math.abs(Math.cos(th)) < 0.03) && s > 0.15 && s < 0.85) return 4;   // the three ridges
+  return 1;
+}
+function drawWhaleShark(o) {
+  if (!project(o.cx, o.cy, o.cz)) return;
+  const ppu = FOC / PZ;
+  if (PX < -ppu * 2 || PX > COLS + ppu * 2) return;
+  const nS = clamp(Math.ceil(BODY * ppu * 2.2), 40, 900), nT = clamp(Math.ceil(TAU * 0.16 * ppu * 2.4), 24, 320);
+  for (let a = 0; a <= nS; a++) {
+    const s = a / nS;
+    profile(s + 0.004); const t2 = PRT, b2 = PRB, w2 = PRW;
+    profile(s); frameAt(o, s);
+    const dT = (t2 - PRT) / (0.004 * BODY), dB = (b2 - PRB) / (0.004 * BODY), dW = (w2 - PRW) / (0.004 * BODY);
+    for (let b = 0; b < nT; b++) {
+      const th = b / nT * TAU, c = Math.cos(th), sn = Math.sin(th), hv = sn > 0 ? PRT : PRB;
+      const vert = hv * sn, lat = PRW * c;
+      const x = FPX + FUX * vert + FSX * lat, y = FPY + FUY * vert + FSY * lat, z = FPZ + FUZ * vert + FSZ * lat;
+      let nu = sn / hv, ns = c / PRW; const l0 = Math.hypot(nu, ns); nu /= l0; ns /= l0;
+      const na = (sn > 0 ? dT : dB) * Math.abs(sn) + dW * Math.abs(c);
+      let nx = FUX * nu + FSX * ns + FTX * na, ny = FUY * nu + FSY * ns + FTY * na, nz = FUZ * nu + FSZ * ns + FTZ * na;
+      const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+      let m = whaleSkin(s, th);
+      const f = fresnel(x, y, z, nx, ny, nz);
+      let L = 0.42 + 0.48 * Math.max(0, nx * LX + ny * LY + nz * LZ) + 0.1 * f * f;
+      if (m === 4) { m = 1; L *= 0.7; }
+      if (s < 0.025 && sn < 0.3 && sn > -0.5) { m = 4; L = 0.3; }                // the wide mouth
+      SNX = nx * RX + nz * RZ; SNY = -(nx * UX + ny * UY + nz * UZ);
+      plot(x, y, z, L, m, 0, 6, 0.04, SOLID);
+    }
+  }
+  SNX = SNY = 0;
+  frameAt(o, 0.05); profile(0.05);
+  for (const sg of [-1, 1]) { const w = PRW * 0.98 * sg; plot(FPX + FSX * w, FPY + FSY * w, FPZ + FSZ * w, 0.6, 4, 64, 0.05, 0, LINE); }
+  // gill slits
+  if (ppu > 14) for (let g = 0; g < 5; g++) { const s = 0.16 + g * 0.025; frameAt(o, s); profile(s);
+    for (const sg of [-1, 1]) { const w = PRW * 0.99 * sg; line(FPX + FUX * -PRB * 0.2 + FSX * w, FPY + FUY * -PRB * 0.2 + FSY * w, FPZ + FUZ * -PRB * 0.2 + FSZ * w, FPX + FUX * PRT * 0.5 + FSX * w, FPY + FUY * PRT * 0.5 + FSY * w, FPZ + FUZ * PRT * 0.5 + FSZ * w, 0.35, 4, 0.05); } }
+  // fins: first dorsal set far back, broad pectorals, a tall crescent tail
+  sheet(o, 0.52, 0.9, 0, 1, 0, 0.45, 0.2, 0.14, 2, 1, ppu);
+  sheet(o, 0.78, 0.9, 0, 1, 0, 0.4, 0.07, 0.06, 2, 1, ppu);
+  for (const sg of [-1, 1]) sheet(o, 0.28, -0.5, 0.8 * sg, -0.35, 0.85 * sg, 0.5, 0.38, 0.16, 2, 1, ppu);
+  sheet(o, 0.97, 0.4, 0, 1, 0, 0.9, 0.48, 0.16, 2, 1, ppu);
+  sheet(o, 0.97, -0.4, 0, -1, 0, 0.8, 0.36, 0.14, 2, 1, ppu);
+}
+// small fish riding along with the whale shark, held in its frame
+function swimEscort(o, dt) {
+  const L = o.lead, s = clamp(o.off[3] || 0, 0, 1); frameAt(L, s);
+  const [f, u, sd] = o.off, j = 0.04 * Math.sin(TIME * 1.3 + o.seed);
+  o.cx = FPX + FTX * f + FUX * (u + j) + FSX * sd; o.cy = FPY + FTY * f + FUY * (u + j) + FSY * sd; o.cz = FPZ + FTZ * f + FUZ * (u + j) + FSZ * sd;
+  const F = o.F, sc = o.scale;
+  F[0] = FTX * sc; F[1] = FTY * sc; F[2] = FTZ * sc; F[3] = FUX * sc; F[4] = FUY * sc; F[5] = FUZ * sc; F[6] = FSX * sc; F[7] = FSY * sc; F[8] = FSZ * sc;
+  o.phase += TAU * o.freq * dt; o.speed = L.speed;
+}
+
 // [seabed]
 // Beige sand, rippled by the swell: the ripple crests catch the light and
 // the caustics slide over them, darker under each animal's soft shadow.
@@ -1762,8 +1956,17 @@ const COLOURS = {
   sponge: [45, 83],
   tubes: [84, 85, 86],
   clam: [46, 87] };
+// the Caribbean: no tables or mushroom corals; elkhorn and pillar coral instead,
+// forests of purple sea fans and sea rods, giant barrel and tube sponges
+const CARIB = {
+  acropora: [[65, 59], [36, 59], [65, 73]], staghorn: [[65, 59], [36, 59]], elkhorn: [[65, 59], [36, 73], [37, 59]],
+  pillar: [73, 37, 74], brain: [38, 68, 65, 69], porites: [65, 68, 37, 38], fan: [76, 76, 18, 77], whip: [76, 18, 71, 40],
+  sponge: [83, 45, 45, 84], tubes: [85, 84, 86, 85], finger: [73, 65], leather: [78], plate: [71] };
+let STYLE = '';
+const PAL = () => STYLE === 'carib' ? Object.assign({}, COLOURS, CARIB) : COLOURS;
 // --- the reef itself
-function makeReefscape(seed) {
+function makeReefscape(seed, style) {
+  STYLE = style || '';
   const R = rng(seed), pick = a => a[(R() * a.length) | 0], blobs = [], bommies = [];
   for (let i = 0; i < 26; i++) {                        // big bommies
     let x, z, n = 0;
@@ -1791,9 +1994,10 @@ function makeReefscape(seed) {
   };
   const add = c => { out.push(c); const k = key(c.x, c.z); if (!hash.has(k)) hash.set(k, []); hash.get(k).push(c); };
   const weighted = list => { let t = 0; for (const [, w] of list) t += w; let u = R() * t; for (const [v, w] of list) if ((u -= w) <= 0) return v; return list[0][0]; };
-  const TOP = [['acropora', 22], ['table', 16], ['staghorn', 9], ['porites', 10], ['brain', 7], ['finger', 9], ['dendro', 5], ['leather', 6], ['clam', 3], ['plate', 4], ['tubes', 3]];
-  const SLOPE = [['plate', 13], ['fan', 9], ['whip', 6], ['brain', 10], ['porites', 13], ['sponge', 7], ['leather', 8], ['dendro', 8], ['finger', 8], ['acropora', 10], ['tubes', 6], ['clam', 3]];
-  const BASE = [['mushroom', 22], ['leather', 7], ['finger', 8], ['brain', 7], ['porites', 10], ['sponge', 5], ['tubes', 8], ['clam', 5], ['acropora', 6], ['staghorn', 5]];
+  const carib = STYLE === 'carib';
+  const TOP = carib ? [['elkhorn', 16], ['staghorn', 12], ['brain', 14], ['porites', 12], ['pillar', 8], ['fan', 10], ['whip', 12], ['sponge', 6], ['tubes', 6]] : [['acropora', 22], ['table', 16], ['staghorn', 9], ['porites', 10], ['brain', 7], ['finger', 9], ['dendro', 5], ['leather', 6], ['clam', 3], ['plate', 4], ['tubes', 3]];
+  const SLOPE = carib ? [['fan', 18], ['whip', 18], ['sponge', 12], ['tubes', 10], ['brain', 12], ['porites', 12], ['pillar', 5], ['staghorn', 5]] : [['plate', 13], ['fan', 9], ['whip', 6], ['brain', 10], ['porites', 13], ['sponge', 7], ['leather', 8], ['dendro', 8], ['finger', 8], ['acropora', 10], ['tubes', 6], ['clam', 3]];
+  const BASE = carib ? [['whip', 14], ['sponge', 12], ['tubes', 10], ['brain', 10], ['porites', 10], ['fan', 8]] : [['mushroom', 22], ['leather', 7], ['finger', 8], ['brain', 7], ['porites', 10], ['sponge', 5], ['tubes', 8], ['clam', 5], ['acropora', 6], ['staghorn', 5]];
   for (let gx = -16.5; gx <= 16.5; gx += 0.32) for (let gz = -12.5; gz <= 7; gz += 0.32) {
     const x = gx + (R() - 0.5) * 0.3, z = gz + (R() - 0.5) * 0.3, d = dens(x, z);
     if (R() > d * 0.9 && !(d === 0 && !reefGap(x, z) && !seagrassAt(x, z) && R() < 0.012)) continue;
@@ -1866,58 +2070,66 @@ function makeColony(type, x, y, z, R, pick) {
     }
   };
   if (type === 'acropora') {                    // corymbose bush: many short branches to a flat-ish top
-    const s = 0.7 + R() * 1.1, segs = [], [body, tip] = pick(COLOURS.acropora);
+    const s = 0.7 + R() * 1.1, segs = [], [body, tip] = pick(PAL().acropora);
     const stems = 3 + (R() * 4 | 0);
     for (let k = 0; k < stems; k++) grow(segs, x + (R() - 0.5) * 0.25 * s, y, z + (R() - 0.5) * 0.25 * s, (R() - 0.5) * 0.8, 1, (R() - 0.5) * 0.8, 0.09 * s, 0.028 * s, 0, 4, 0.35, 1.2, 3);
     Object.assign(c, { segs, body, tip, rr: 0.32 * s });
   } else if (type === 'staghorn') {             // sprawling antlers: long, few, low
-    const s = 0.8 + R() * 1.0, segs = [], [body, tip] = pick(COLOURS.staghorn);
+    const s = 0.8 + R() * 1.0, segs = [], [body, tip] = pick(PAL().staghorn);
     for (let k = 0; k < 4; k++) { const a = R() * TAU; grow(segs, x, y, z, Math.cos(a) * 0.8, 0.6, Math.sin(a) * 0.8, 0.22 * s, 0.022 * s, 0, 3, 0.15, 0.9, 2); }
     Object.assign(c, { type: 'acropora', segs, body, tip, rr: 0.5 * s });
+  } else if (type === 'elkhorn') {             // Caribbean elkhorn: thick, flattened antlers spreading wide and low
+    const s = 0.9 + R() * 0.9, segs = [], [body, tip] = pick(PAL().elkhorn);
+    for (let k = 0; k < 3; k++) { const a = R() * TAU; grow(segs, x, y, z, Math.cos(a) * 0.7, 0.75, Math.sin(a) * 0.7, 0.2 * s, 0.06 * s, 0, 3, 0.02, 1.5, 3); }
+    Object.assign(c, { type: 'acropora', segs, body, tip, rr: 0.6 * s });
+  } else if (type === 'pillar') {              // pillar coral: tall fuzzy columns
+    const s = 0.8 + R() * 0.7, fingers = [];
+    for (let k = 0; k < 3 + (R() * 5 | 0); k++) { const a = R() * TAU, d = Math.sqrt(R()) * 0.16 * s; fingers.push([Math.cos(a) * d, Math.sin(a) * d, (0.35 + R() * 0.5) * s, 0.05 * s + R() * 0.02]); }
+    Object.assign(c, { type: 'finger', fingers, m: pick(PAL().pillar), rr: 0.22 * s });
   } else if (type === 'table') {
     const Rr = 0.4 + R() * 0.55, rim = []; for (let k = 0; k < 7; k++) rim.push([R() * TAU, 0.05 + R() * 0.12, 2 + (R() * 4 | 0)]);
-    Object.assign(c, { h: 0.16 + R() * 0.22, R: Rr, tiers: R() < 0.3 ? 2 : 1, tilt: (R() - 0.5) * 0.16, rim, m: pick(COLOURS.table), rr: Rr });
+    Object.assign(c, { h: 0.16 + R() * 0.22, R: Rr, tiers: R() < 0.3 ? 2 : 1, tilt: (R() - 0.5) * 0.16, rim, m: pick(PAL().table), rr: Rr });
   } else if (type === 'finger') {
     const s = 0.6 + R() * 0.9, fingers = [];
     for (let k = 0; k < 9 + (R() * 12 | 0); k++) { const a = R() * TAU, d = Math.sqrt(R()) * 0.22 * s; fingers.push([Math.cos(a) * d, Math.sin(a) * d, (0.1 + R() * 0.14) * s * (1 - d / s), 0.022 * s + R() * 0.01]); }
-    Object.assign(c, { fingers, m: pick(COLOURS.finger), rr: 0.26 * s });
+    Object.assign(c, { fingers, m: pick(PAL().finger), rr: 0.26 * s });
   } else if (type === 'porites') {
     const r = 0.22 + R() ** 1.6 * 0.7, lobes = [];
     for (let k = 0; k < 1 + (R() * 4 | 0); k++) { const a = R() * TAU, d = k ? r * (0.35 + R() * 0.4) : 0; lobes.push([Math.cos(a) * d, Math.sin(a) * d, r * (k ? 0.5 + R() * 0.35 : 1)]); }
-    Object.assign(c, { r, lobes, m: pick(COLOURS.porites), dead: R() < 0.3, rr: r * 1.2 });
+    Object.assign(c, { r, lobes, m: pick(PAL().porites), dead: R() < 0.3, rr: r * 1.2 });
   } else if (type === 'brain') {
     const r = 0.15 + R() ** 1.5 * 0.4;
-    Object.assign(c, { r, m: pick(COLOURS.brain), groove: 18 + R() * 16, rr: r });
+    Object.assign(c, { r, m: pick(PAL().brain), groove: 18 + R() * 16, rr: r });
   } else if (type === 'plate') {
     const s = 0.7 + R() * 0.8, petals = [];
     for (let k = 0; k < 4 + (R() * 6 | 0); k++) petals.push([k * 1.2 + R() * 0.5, 0.18 + R() * 0.2, (0.05 + k * 0.03) * s, (0.25 + R() * 0.25) * s]);
-    Object.assign(c, { petals, m: pick(COLOURS.plate), rr: 0.4 * s });
+    Object.assign(c, { petals, m: pick(PAL().plate), rr: 0.4 * s });
   } else if (type === 'mushroom') {
-    Object.assign(c, { r: 0.07 + R() * 0.09, e: 0.6 + R() * 0.3, rot: R() * TAU, m: pick(COLOURS.mushroom), rr: 0.15 });
+    Object.assign(c, { r: 0.07 + R() * 0.09, e: 0.6 + R() * 0.3, rot: R() * TAU, m: pick(PAL().mushroom), rr: 0.15 });
   } else if (type === 'fan') {
     const segs = [], s = 0.6 + R() * 0.8;
     const fan = (u, v, ang, len, depth) => { const eu = u + Math.cos(ang) * len, ev = v + Math.sin(ang) * len; segs.push([u, v, eu, ev]); if (depth >= 6) return; for (const sg of [-1, 1]) fan(eu, ev, ang + sg * (0.2 + R() * 0.3), len * 0.8, depth + 1); };
     fan(0, 0, Math.PI / 2, 0.16 * s, 0);
-    Object.assign(c, { segs, rot: R() * Math.PI, m: pick(COLOURS.fan), rr: 0.25 * s });
+    Object.assign(c, { segs, rot: R() * Math.PI, m: pick(PAL().fan), rr: 0.25 * s });
   } else if (type === 'whip') {
     const rods = []; for (let k = 0; k < 2 + (R() * 4 | 0); k++) rods.push([(R() - 0.5) * 0.15, (R() - 0.5) * 0.15, 0.5 + R() * 0.7, R() * TAU]);
-    Object.assign(c, { rods, m: pick(COLOURS.whip), rr: 0.15 });
+    Object.assign(c, { rods, m: pick(PAL().whip), rr: 0.15 });
   } else if (type === 'leather') {
     const lobed = R() < 0.45, s = 0.6 + R() * 0.8, lobes = [];
     if (lobed) for (let k = 0; k < 6 + (R() * 6 | 0); k++) { const a = R() * TAU, d = Math.sqrt(R()) * 0.2 * s; lobes.push([Math.cos(a) * d, Math.sin(a) * d, (0.06 + R() * 0.08) * s]); }
-    Object.assign(c, { lobed, lobes, r: (0.22 + R() * 0.18) * s, h: (0.1 + R() * 0.1) * s, m: pick(COLOURS.leather), rr: 0.3 * s });
+    Object.assign(c, { lobed, lobes, r: (0.22 + R() * 0.18) * s, h: (0.1 + R() * 0.1) * s, m: pick(PAL().leather), rr: 0.3 * s });
   } else if (type === 'dendro') {
     const s = 0.6 + R() * 0.7, tips = [];
     for (let k = 0; k < 6 + (R() * 6 | 0); k++) tips.push([(R() - 0.5) * 0.4 * s, (0.18 + R() * 0.3) * s, (R() - 0.5) * 0.4 * s, (0.045 + R() * 0.045) * s]);
-    Object.assign(c, { tips, m: pick(COLOURS.dendro), rr: 0.25 * s });
+    Object.assign(c, { tips, m: pick(PAL().dendro), rr: 0.25 * s });
   } else if (type === 'sponge') {
-    const r = 0.13 + R() * 0.12;
-    Object.assign(c, { r, h: r * (2 + R() * 2.5), m: pick(COLOURS.sponge), rr: r * 1.4 });
+    const r = (0.13 + R() * 0.12) * (STYLE === 'carib' ? 1.6 : 1);
+    Object.assign(c, { r, h: r * (2 + R() * 2.5), m: pick(PAL().sponge), rr: r * 1.4 });
   } else if (type === 'tubes') {
     const tubes = []; for (let k = 0; k < 3 + (R() * 5 | 0); k++) { const a = R() * TAU, d = R() * 0.1; tubes.push([Math.cos(a) * d, Math.sin(a) * d, 0.18 + R() * 0.35, 0.035 + R() * 0.02, (R() - 0.5) * 0.3]); }
-    Object.assign(c, { tubes, m: pick(COLOURS.tubes), rr: 0.18 });
+    Object.assign(c, { tubes, m: pick(PAL().tubes), rr: 0.18 });
   } else if (type === 'clam') {
-    Object.assign(c, { r: 0.1 + R() * 0.12, rot: R() * TAU, m: pick(COLOURS.clam), rr: 0.2 });
+    Object.assign(c, { r: 0.1 + R() * 0.12, rot: R() * TAU, m: pick(PAL().clam), rr: 0.2 });
   }
   return c;
 }
@@ -2269,6 +2481,7 @@ function drawFish3D(o) {
       let m = sn < -0.4 ? L.belly : L.body;
       if (L.spots && Math.sin(s * 70) * Math.sin(th * 13) > 0.55) m = L.spots;
       if (L.bar && Math.abs(s - 0.12) < 0.035) m = L.bar;
+      if (L.stripes && s > 0.18 && s < 0.85 && Math.abs(((s - 0.18) * 7.5) % 1 - 0.5) < 0.16 && sn > -0.6) m = L.stripes;
       if (L.swoosh && s > 0.18 && s < 0.86 && Math.abs(sn - (0.15 + 0.55 * Math.sin((s - 0.18) / 0.68 * Math.PI))) < 0.22 && sn > -0.2) m = L.swoosh;
       if (L.mask && s < 0.18 && sn > -0.1) m = L.mask;
       if (L.blotch && fbm(s * 9 + o.seed, th * 1.6) > 0.62 && sn > -0.5) m = L.spots;
@@ -2424,7 +2637,7 @@ function driftSnow(dt) {
 }
 function drawSnow(t) {
   if (ENV.streaks) {                       // a steady slant of marine snow across the whole view, as in the clownfish film
-    const n = (COLS * ROWS * 0.035 * TUNE.snow) | 0;
+    const n = (COLS * ROWS * 0.035 * TUNE.snow * (ENV.snowK || 1)) | 0;
     for (let k = 0; k < n; k++) {
       const h1 = hash2(k, 7), h2 = hash2(k, 13), sp = 2 + 4 * hash2(k, 29);
       const yy = ((h2 * ROWS + t * sp) % ROWS + ROWS) % ROWS, xx = ((h1 * COLS - t * sp * 0.6) % COLS + COLS) % COLS;
@@ -2435,7 +2648,7 @@ function drawSnow(t) {
       chr[i] = r > 0.96 ? 43 : r > 0.93 ? 42 : 47;
     }
   }
-  const nf = Math.min(SNOWN, Math.round(SNOWN * TUNE.snow)) * 4;
+  const nf = Math.min(SNOWN, Math.round(SNOWN * TUNE.snow * (ENV.snowK || 1))) * 4;
   for (let i = 0; i < nf; i += 4) {
     let x = snow[i] - TX; x = TX + ((((x + 6) % 12) + 12) % 12) - 6;
     let z = snow[i + 2] - TZ; z = TZ + ((((z + 3) % 6) + 6) % 6) - 3;
@@ -2598,8 +2811,13 @@ const STOPS = [null,
   [[10, 40, 70], [50, 150, 220], [170, 226, 255]],   // 98 parrotfish blue
   [[50, 44, 30], [180, 160, 110], [240, 226, 180]],    // 99 honeycomb moray
   [[8, 24, 84], [36, 96, 236], [150, 196, 255]],      // 100 blue tang
-  [[6, 6, 14], [20, 22, 40], [44, 48, 70]]];          // 101 tang black
-const COLORS = [], GLYPH = [];
+  [[6, 6, 14], [20, 22, 40], [44, 48, 70]],          // 101 tang black
+  [[30, 22, 8], [150, 116, 42], [236, 204, 112]],     // 102 kelp blades: golden brown
+  [[22, 18, 8], [104, 84, 36], [180, 150, 84]],       // 103 kelp stipe
+  [[40, 36, 10], [190, 170, 60], [250, 236, 150]],    // 104 kelp bladders
+  [[10, 18, 30], [56, 76, 104], [130, 156, 190]],     // 105 whale shark: blue-grey
+  [[150, 156, 160], [226, 232, 236], [255, 255, 255]] // 106 whale shark spots
+];const COLORS = [], GLYPH = [];
 const ANIMAL_MATS = new Set([1, 2, 3, 25, 26, 27, 28, 29, 30, 50, 51, 52, 53, 58, 89, 90, 100, 101]);
 function tint([r, g, b], animal) {
   if (animal && TUNE.hue) {                                 // turn the hue round the colour wheel
@@ -2667,7 +2885,7 @@ function present() {
   vctx.setTransform(1, 0, 0, 1, 0, 0);
   vctx.globalCompositeOperation = 'source-over'; vctx.globalAlpha = 1;
   const g = vctx.createLinearGradient(0, 0, 0, view.height);
-  const w = TUNE.water; g.addColorStop(0, `rgb(${Math.round(4 * w)},${Math.round(46 * w)},${Math.round(72 * w)})`); g.addColorStop(1, `rgb(0,${Math.round(10 * w)},${Math.round(20 * w)})`);
+  const w = Math.max(TUNE.water, ENV.water || 0); g.addColorStop(0, `rgb(${Math.round(4 * w)},${Math.round(46 * w)},${Math.round(72 * w)})`); g.addColorStop(1, `rgb(0,${Math.round(10 * w)},${Math.round(20 * w)})`);
   vctx.fillStyle = g; vctx.fillRect(0, 0, view.width, view.height);
   bctx.clearRect(0, 0, bloom.width, bloom.height); bctx.drawImage(txt, 0, 0, bloom.width, bloom.height);
   vctx.imageSmoothingEnabled = true; vctx.globalCompositeOperation = 'lighter'; vctx.globalAlpha = Math.min(1, (ENV.glow || 0.45) * TUNE.glow);
@@ -2712,7 +2930,7 @@ function shoals(dt) {
       v[i] += ax * dt; v[i + 1] += ay * dt; v[i + 2] += az * dt;
       const sp = Math.hypot(v[i], v[i + 1], v[i + 2]);
       if (sp > 1.8) { v[i] *= 1.8 / sp; v[i + 1] *= 1.8 / sp; v[i + 2] *= 1.8 / sp; }
-      p[i] += v[i] * dt; p[i + 1] = clamp(p[i + 1] + v[i + 1] * dt, (TOPS && current === 'reef' ? topAt(p[i], p[i + 2]) : FLOOR) + (S.clear || 0.15), SURF - 0.2); p[i + 2] += v[i + 2] * dt;
+      p[i] += v[i] * dt; p[i + 1] = clamp(p[i + 1] + v[i + 1] * dt, (TOPS && (current === 'reef' || current === 'carib') ? topAt(p[i], p[i + 2]) : FLOOR) + (S.clear || 0.15), SURF - 0.2); p[i + 2] += v[i + 2] * dt;
     }
   }
 }
@@ -2752,6 +2970,9 @@ const KINDS = {
   clownfar: { swim: swimClownFree, draw: drawClown, rigid: true, calm: true, poke: () => {} },
   dancer:  { swim: swimClownFree, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
   clownlet: { swim: (o, dt) => { swimClown(o, dt); const F = o.F; for (let i = 0; i < 9; i++) F[i] *= o.scale; }, draw: drawClown, rigid: true, calm: true, poke: () => {} },
+  sealion: { swim: swimSeaLion, draw: drawSeaLion, prof: SEALION_PROFILE, flex: 0.25, stiff: 0.22, poke: o => { o.rollT = 0; } },
+  whale:   { swim: swimShark, draw: drawWhaleShark, prof: WHALE_PROFILE, flex: 0.7, stiff: 0.5, poke: () => {} },
+  escort:  { swim: swimEscort, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
   fish:    { swim: swimFish, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
   glide:   { swim: swimGlide, draw: () => {}, rigid: true, calm: true, poke: () => {} } };
 const DOLPHIN_BANDS = [[[40, 62, 92], [120, 166, 222], [214, 236, 255]], [[64, 72, 84], [178, 192, 210], [240, 246, 252]], [[70, 70, 76], [214, 216, 222], [255, 252, 244]]];
@@ -2824,6 +3045,49 @@ const SCENES = {
       M.n = keep.length;
       ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
     } },
+  carib: { rate: 'drift', tag: 'caribbean', tap: 'drag to look around', view: { dist: 4.6, half: 1.25, side: 2.2, pitch: 0.95 }, bands: DOLPHIN_BANDS,
+    build() {
+      const { corals, bommies } = makeReefscape(13, 'carib'), R = rng(91);
+      // Life is spread evenly round the camera's drift, each animal in its own
+      // slot, so every part of the loop looks the same: never empty, never crowded.
+      const along = (u, d) => { const a = -u * TAU, r = 5.5 + d; return [r * Math.cos(a), -2.5 + r * Math.sin(a)]; };
+      const near = () => along(R(), (R() - 0.5) * 2.4);
+      const slot = (u, d) => { let x, z, n = 0; do { [x, z] = along(u + (R() - 0.5) * 0.01 * n, d * (1 - n / 40)); } while ((reefGap(x, z) || seagrassAt(x, z)) && n++ < 30); return { x, z, h: topAt(x, z) - FLOOR }; };
+      animals = [makeSwimmer(KINDS.glide, { route: REEF_ROUTE, base: 0.55, start: 0 }),
+                 makeSwimmer(KINDS.turtle, { route: REEF_TURTLE, base: 0.38, start: 0.3 })];
+      animals[1].sepR = 0.75;
+      const LOOKS_IP = {
+        grouper: { body: 89, belly: 74, spots: 90, blotch: true, scales: true, fin: 89, edge: 90, iris: 96, deep: 1.1, wag: 0.04, scale: 0.85, speed: 0.18, dorsal: 0.12 },
+        parrot: { body: 56, belly: 98, fin: 80, scales: true, wag: 0.06, scale: 0.5, speed: 0.3, forked: true },
+        butterfly: { body: 24, belly: 52, bar: 101, fin: 24, edge: 101, deep: 1.6, thin: 0.6, wag: 0.07, scale: 0.2, speed: 0.22, dorsal: 0.14 },
+        tang: { body: 100, belly: 100, swoosh: 101, fin: 100, edge: 101, tail: 24, deep: 1.35, thin: 0.6, wag: 0.06, scale: 0.26, speed: 0.28, dorsal: 0.08 } };
+      // twelve fish, one per slot, kinds taking turns: a grouper, a tang, a butterflyfish, a parrotfish, ...
+      const LOOKS = {
+        angel: { body: 24, belly: 100, fin: 100, edge: 24, deep: 1.7, thin: 0.55, wag: 0.05, scale: 0.3, speed: 0.22, dorsal: 0.16 },
+        sergeant: { body: 82, belly: 52, stripes: 101, fin: 82, deep: 1.3, thin: 0.6, wag: 0.07, scale: 0.17, speed: 0.28, dorsal: 0.1 },
+        parrot: { body: 56, belly: 81, fin: 81, scales: true, wag: 0.06, scale: 0.45, speed: 0.3, forked: true },
+        btang: { body: 100, belly: 100, fin: 100, edge: 23, tail: 100, deep: 1.4, thin: 0.6, wag: 0.06, scale: 0.24, speed: 0.28, dorsal: 0.08 },
+        grouper: LOOKS_IP.grouper };
+      const ORDER = ['angel', 'sergeant', 'btang', 'parrot', 'sergeant', 'grouper'];
+      for (let i = 0; i < 12; i++) {
+        const L = LOOKS[ORDER[i % ORDER.length]], b = slot((i + 0.5) / 12, (i % 2 ? 1 : -1) * 0.9);
+        const o = makeSwimmer(KINDS.fish, { route: fishRoute(b.x, b.z, 0.55 + R() * 0.25, FLOOR + b.h + 0.35 + R() * 0.15, R), base: L.speed, start: R(), seed: R() * 9 });
+        o.look = L; o.scale = L.scale * 1.6 * (0.9 + R() * 0.2); o.clear = 0.25 + o.scale * 0.4; o.freq = 1.2 / Math.sqrt(o.scale); o.sepR = 0.45 * o.scale + 0.15; animals.push(o);
+      }
+      // one small shoal per slot, between the big fish, low over the coral
+      const sh = (n, seed, mat, at, spread, roam) => makeShoal({ n, seed, mat, at, small: false, roam, drift: 0.12, spread, jitter: 0.06 });
+      const shoals = [], kinds = [24, 23, 57, 82, 24, 23];
+      for (let i = 0; i < 12; i++) {
+        const b = slot(i / 12, (i % 2 ? -1 : 1) * 0.7), S = sh(9, 200 + i, kinds[i % kinds.length], [b.x, FLOOR + b.h + 0.22, b.z], [0.6, 0.12, 0.6], [0.35, 0.04, 0.3]);
+        S.clear = 0.08; shoals.push(S);
+      }
+      const anems = [];
+      const M = makeMeadow(2600, 9, -17, 17, -13, 8, 0.18, 0.4), keep = [];
+      for (let i = 0; i < M.n; i++) if (seagrassAt(M.x[i], M.z[i])) keep.push(i);
+      for (const f of ['x', 'z', 'h', 'ph', 'az', 'tone']) M[f] = M[f].constructor.from(keep, i => M[f][i]);
+      M.n = keep.length;
+      ENV = { rocks: [], tufts: [], meadow: M, corals, anems, critters: makeCritters(31, bommies, near, true), stars: [], boost: true, noSurface: true, cull: [10, 7.5], sandSpan: 8, sandStep: 0.15, shoals };
+    } },
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
@@ -2852,6 +3116,30 @@ const SCENES = {
       animals = [makeSwimmer(KINDS.turtle, { route: TURTLE_ROUTE, base: 0.42, start: 0 })];
       ENV = { rocks: makeRocks(6, 14), tufts: [], meadow: makeMeadow(350, 15, -7, 7, -4, 2.5, 0.2, 0.45), corals: makeCorals('garden', 16), stars: makeStars(6, 17),
               shoals: [makeShoal({ n: 30, seed: 27, mat: 23, at: [-1, -1.1, -0.5], small: true, roam: [1.5, 0.2, 1], drift: 0.08, spread: [1, 0.4, 0.8], jitter: 0.05 })] };
+    } },
+  sealion: { rate: 'stroke', tag: 'zalophus californianus', tap: 'tap for a barrel roll', view: { yaw: -Math.PI / 2 + 0.22, half: 0.62, side: 1.0, pitch: 0.28 },
+    bands: [[[34, 24, 14], [112, 78, 48], [196, 150, 100]], [[56, 40, 24], [166, 122, 78], [230, 192, 140]], [[70, 56, 38], [188, 158, 116], [240, 220, 182]]],
+    build() {
+      HM = null;
+      animals = [makeSwimmer(KINDS.sealion, { route: SEALION_ROUTE, base: 1.0, start: 0 })];
+      // keep the kelp off the sea lion's own line, so it threads between the stalks
+      const P = buildPath(SEALION_ROUTE), clear = (x, z) => { for (let d = 0; d < P.lap; d += 0.3) { pathAt(P, d); if (Math.hypot(QX - x, QZ - z) < 0.55) return true; } return false; };
+      const rocks = makeRocks(10, 61);
+      ENV = { rocks, tufts: makeTufts(18, rocks, 62), meadow: null, corals: [], kelp: makeKelp(48, 63, clear), stars: makeStars(8, 64), water: 0.32, snowK: 1.4, boost: true,
+              shoals: [makeShoal({ n: 7, seed: 65, mat: 96, at: [-2, -1.2, -1.5], roam: [2, 0.15, 1.2], drift: 0.06, spread: [2, 0.3, 1.2], jitter: 0.05 }),
+                       silver(66, [2, -0.2, -3])] };
+    } },
+  whaleshark: { rate: 'tail', tag: 'rhincodon typus', tap: 'drag to look around', view: { yaw: -Math.PI / 2, half: 0.6, side: 1.05, pitch: 1.25 }, bands: [[[16, 28, 46], [80, 104, 140], [160, 186, 220]], [[150, 156, 160], [226, 232, 236], [255, 255, 255]], [[110, 116, 122], [214, 220, 226], [250, 252, 255]]],
+    build() {
+      HM = null;
+      const W = makeSwimmer(KINDS.whale, { route: WHALE_ROUTE, base: 0.45, start: 0, shape: null });
+      animals = [W];
+      const R = rng(71);
+      const trevally = { body: 24, belly: 52, fin: 24, deep: 1.3, thin: 0.6, wag: 0.07, dorsal: 0.08, forked: true },
+            remora = { body: 101, belly: 67, stripes: 67, fin: 101, deep: 0.7, thin: 0.9, wag: 0.03, dorsal: 0.04 };
+      for (let k = 0; k < 7; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = trevally; o.scale = 0.12 + R() * 0.03; o.freq = 3.2; o.off = [0.12 + R() * 0.35, (R() - 0.5) * 0.15, (R() - 0.5) * 0.45, 0]; animals.push(o); }
+      for (let k = 0; k < 3; k++) { const o = makeSwimmer(KINDS.escort, { route: WHALE_ROUTE, base: 0.45, start: 0, seed: R() * 9 }); o.lead = W; o.look = remora; o.scale = 0.15; o.freq = 1.2; o.off = [0, -0.17, (k - 1) * 0.08, 0.35 + k * 0.08]; animals.push(o); }
+      ENV = { rocks: [], tufts: [], meadow: null, corals: [], stars: [], water: 0.6, snowK: 2.6, shoals: [] };
     } },
   manta: { rate: 'wingbeat', tag: 'mobula birostris', tap: 'tap: an extra wingbeat', view: { yaw: -Math.PI / 2 + 0.35, dist: 2.0, half: 0.85, side: 1.45, pitch: -1.3 }, bands: DOLPHIN_BANDS,
     build() {
@@ -2889,13 +3177,13 @@ function step(dt) {
   TIME += dt;
   if (current === 'dolphins') dolphinDirector(dt);
   for (const o of animals) { PROF = o.kind.prof; o.kind.swim(o, dt); }
-  if (TOPS && current === 'reef') for (const o of animals) {
+  if (TOPS && (current === 'reef' || current === 'carib')) for (const o of animals) {
     if (o.kind === KINDS.glide) continue;
     const need = Math.max(0, topAt(o.cx, o.cz) + (o.clear || 0.3) - o.cy);
     o.lift = (o.lift || 0) + (need - (o.lift || 0)) * Math.min(1, dt * 3);
     o.cy += o.lift;
   }
-  if (current === 'reef') {
+  if (current === 'reef' || current === 'carib') {
     // keep the big swimmers apart: each holds a little offset from its path that
     // grows while it is too close to another and fades once it is clear
     const big = animals.filter(o => o.sepR);
@@ -2913,7 +3201,7 @@ function step(dt) {
 function render(dt) {
   setCamera(dt);
   depth.fill(1e9); mat.fill(0); chr.fill(0); kind.fill(0); glass.fill(0);
-  drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawCorals(TIME); drawCritters(TIME); drawAnemones(TIME, dt); drawShoals(); drawPrey();
+  drawSeabed(TIME); drawRocks(); drawTufts(TIME); drawMeadow(TIME); drawKelp(TIME, dt); drawCorals(TIME); drawCritters(TIME); drawAnemones(TIME, dt); drawShoals(); drawPrey();
   for (const o of animals) { PROF = o.kind.prof; SCX = o.cx; SCY = o.cy; SCZ = o.cz; SCK = TUNE.size; o.kind.draw(o); }
   SCK = 1;
   if (ENV.waterline) drawWaterline(TIME);
