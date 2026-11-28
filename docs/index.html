@@ -1059,12 +1059,13 @@ const CLOWN_MODES = [['wander', 4], ['hover', 2], ['dart', 1.5], ['nestle', 1.5]
 function pickMode(R) { let t = 0; for (const [, w] of CLOWN_MODES) t += w; let u = R() * t; for (const [m, w] of CLOWN_MODES) if ((u -= w) <= 0) return m; return 'wander'; }
 function steerFree(o, dt, tx, ty, tz, speed) {
   const H = o.home;
-  tx = clamp(tx, H.x - H.rx, H.x + H.rx); ty = clamp(ty, H.y0, H.y1); tz = clamp(tz, H.z - H.rz, H.z + H.rz);
+  const y0 = o.mode === 'nestle' && H.yIn !== undefined ? H.yIn : H.y0, z0 = o.mode === 'nestle' && H.zIn !== undefined ? H.zIn : H.z - H.rz;
+  tx = clamp(tx, H.x - H.rx, H.x + H.rx); ty = clamp(ty, y0, H.y1); tz = clamp(tz, z0, H.z + H.rz);
   const dx = tx - o.cx, dy = ty - o.cy, dz = tz - o.cz, d = Math.hypot(dx, dy, dz) || 1e-3;
   const want = Math.min(speed, d * 1.6), k = Math.min(1, dt * 2.2);
   o.vx += (dx / d * want - o.vx) * k; o.vy += (dy / d * want * 0.6 - o.vy) * k; o.vz += (dz / d * want - o.vz) * k;
   o.cx += o.vx * dt; o.cy += o.vy * dt + 0.012 * Math.sin(TIME * 1.7 + o.seed) * dt; o.cz += o.vz * dt;
-  o.cx = clamp(o.cx, H.x - H.rx - 0.2, H.x + H.rx + 0.2); o.cy = clamp(o.cy, H.y0, H.y1); o.cz = clamp(o.cz, H.z - H.rz - 0.2, H.z + H.rz + 0.2);
+  o.cx = clamp(o.cx, H.x - H.rx - 0.2, H.x + H.rx + 0.2); o.cy = clamp(o.cy, Math.min(y0, H.y0), H.y1); o.cz = clamp(o.cz, Math.min(z0, H.z - H.rz) - 0.2, H.z + H.rz + 0.2);
   o.speed = Math.hypot(o.vx, o.vy, o.vz);
   // face the way it swims; keep the last heading while hovering, turning slowly
   if (o.speed > 0.04) {
@@ -1088,18 +1089,24 @@ function swimClownFree(o, dt) {
   const H = o.home, R = o.R;
   o.burst *= Math.exp(-dt * 1.2);
   o.timer -= dt;
+  const reached = Math.hypot(o.tx - o.cx, o.ty - o.cy, o.tz - o.cz) < 0.08;
+  if (o.mode === 'nestle' && reached && o.timer > 0.6 && H.yIn !== undefined) {   // deep in the arms: thread on to the next gap
+    o.tx = H.x + (R() - 0.5) * H.rx; o.ty = H.yIn + R() * 0.15; o.tz = (H.zIn + H.z) / 2 + (R() - 0.5) * 0.3;
+  } else if (reached && o.mode !== 'hover' && o.timer > 0.3) o.timer = 0.3;          // arrived: soon do something else
   if (o.timer <= 0) {                                  // decide what to do next
-    o.mode = pickMode(R);
+    let m = pickMode(R), n = 0;
+    while ((m === o.mode && m !== 'wander') && n++ < 5) m = pickMode(R);
+    o.mode = m;
     const side = o.cx > H.x ? -1 : 1;
     if (o.mode === 'wander') { o.tx = H.x + (R() - 0.5) * 2 * H.rx; o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * 2 * H.rz; o.timer = 2.5 + R() * 2; }
-    if (o.mode === 'hover') { o.tx = o.cx; o.ty = o.cy; o.tz = o.cz; o.timer = 1.5 + R() * 2; }
+    if (o.mode === 'hover') { o.tx = o.cx; o.ty = Math.max(o.cy, H.y0); o.tz = o.cz; o.timer = 1.0 + R() * 0.8; }
     if (o.mode === 'dart') { o.tx = H.x + side * H.rx * (0.6 + 0.4 * R()); o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * H.rz; o.timer = 1.2 + R(); o.burst = 1; }
-    if (o.mode === 'nestle') { o.tx = H.x + (R() - 0.5) * H.rx * 0.6; o.ty = H.y0; o.tz = H.z + (R() - 0.5) * H.rz * 0.6; o.timer = 2.5 + R() * 2; }
+    if (o.mode === 'nestle') { o.tx = H.x + (R() - 0.5) * H.rx * 0.8; o.ty = H.yIn !== undefined ? H.yIn : H.y0; o.tz = H.zIn !== undefined ? (H.zIn + H.z) / 2 : H.z; o.timer = 3.5 + R() * 2; }
     if (o.mode === 'turn') { o.tx = o.cx + side * H.rx * 0.9; o.ty = o.cy; o.tz = o.cz + (R() - 0.5) * 0.3; o.timer = 1.8 + R(); }
   }
   const sp = { wander: 0.24, hover: 0.04, dart: 0.85, nestle: 0.14, turn: 0.3 }[o.mode] * (o.pace || 1);
-  const ty = o.ty + (o.mode === 'hover' ? 0.03 * Math.sin(TIME * 2 + o.seed) : 0);
-  steerFree(o, dt, o.tx, ty, o.tz, sp);
+  const hv = o.mode === 'hover' ? 1 : 0;
+  steerFree(o, dt, o.tx + hv * 0.08 * Math.cos(TIME * 1.3 + o.seed), o.ty + hv * 0.04 * Math.sin(TIME * 2 + o.seed), o.tz + hv * 0.05 * Math.sin(TIME * 1.3 + o.seed), Math.max(sp, hv * 0.08));
   const inArms = clamp(1 - (o.cy - H.y0) / 0.25, 0, 1);
   o.freq = (o.mode === 'hover' ? 2.2 : 1.3) + 1.6 * o.burst + 0.8 * inArms; o.amp = (o.mode === 'hover' ? 0.5 : 1) + 0.6 * inArms;
   o.phase += TAU * o.freq * dt;
@@ -2652,7 +2659,7 @@ const SCENES = {
       HM = null;
       const R = rng(42), pinks = [];
       animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 1 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 2 })];
-      const home = { x: 0.1, z: -0.5, rx: 0.85, rz: 0.35, y0: FLOOR + 0.82, y1: FLOOR + 1.2 };
+      const home = { x: 0.1, z: -0.5, rx: 0.85, rz: 0.35, y0: FLOOR + 0.82, y1: FLOOR + 1.2, yIn: FLOOR + 0.66, zIn: -1.0 };
       initFree(animals[0], home, R); initFree(animals[1], home, R); animals[1].scale = 0.85;
       animals[1].cx = animals[0].cx + 1.4; animals[1].timer = 1e9;
       // far off, a second anemone with its own little family
