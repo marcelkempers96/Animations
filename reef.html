@@ -1043,6 +1043,65 @@ function swimClown(o, dt) {
   ride(o, dt, 0.4);
   o.cy += 0.02 * Math.sin(TIME * 1.1);
 }
+// Free swimming: the clownfish in their own scene are not on a track. Each one
+// picks what to do next: potter about the anemone, hover and fan its fins,
+// dart across, nestle down among the arms, or turn and go back the other way.
+// It steers towards that, turns gradually, and faces where it is going.
+const CLOWN_MODES = [['wander', 4], ['hover', 2], ['dart', 1.5], ['nestle', 1.5], ['turn', 1]];
+function pickMode(R) { let t = 0; for (const [, w] of CLOWN_MODES) t += w; let u = R() * t; for (const [m, w] of CLOWN_MODES) if ((u -= w) <= 0) return m; return 'wander'; }
+function steerFree(o, dt, tx, ty, tz, speed) {
+  const H = o.home;
+  tx = clamp(tx, H.x - H.rx, H.x + H.rx); ty = clamp(ty, H.y0, H.y1); tz = clamp(tz, H.z - H.rz, H.z + H.rz);
+  const dx = tx - o.cx, dy = ty - o.cy, dz = tz - o.cz, d = Math.hypot(dx, dy, dz) || 1e-3;
+  const want = Math.min(speed, d * 1.6), k = Math.min(1, dt * 2.2);
+  o.vx += (dx / d * want - o.vx) * k; o.vy += (dy / d * want * 0.6 - o.vy) * k; o.vz += (dz / d * want - o.vz) * k;
+  o.cx += o.vx * dt; o.cy += o.vy * dt + 0.012 * Math.sin(TIME * 1.7 + o.seed) * dt; o.cz += o.vz * dt;
+  o.cx = clamp(o.cx, H.x - H.rx - 0.2, H.x + H.rx + 0.2); o.cy = clamp(o.cy, H.y0, H.y1); o.cz = clamp(o.cz, H.z - H.rz - 0.2, H.z + H.rz + 0.2);
+  o.speed = Math.hypot(o.vx, o.vy, o.vz);
+  // face the way it swims; keep the last heading while hovering, turning slowly
+  if (o.speed > 0.04) {
+    let fx = o.vx, fy = clamp(o.vy, -0.35 * o.speed, 0.35 * o.speed), fz = o.vz; const l = Math.hypot(fx, fy, fz); fx /= l; fy /= l; fz /= l;
+    const t = Math.min(1, dt * (o.mode === 'dart' ? 6 : 3));
+    o.hx += (fx - o.hx) * t; o.hy += (fy - o.hy) * t; o.hz += (fz - o.hz) * t;
+  }
+  let fx = o.hx, fy = o.hy, fz = o.hz; const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+  let ux = -fx * fy, uy = 1 - fy * fy, uz = -fz * fy; const ul = Math.hypot(ux, uy, uz) || 1; ux /= ul; uy /= ul; uz /= ul;
+  const sx = fy * uz - fz * uy, sy = fz * ux - fx * uz, sz = fx * uy - fy * ux, F = o.F, sc = o.scale || 1;
+  F[0] = fx * sc; F[1] = fy * sc; F[2] = fz * sc; F[3] = ux * sc; F[4] = uy * sc; F[5] = uz * sc; F[6] = sx * sc; F[7] = sy * sc; F[8] = sz * sc;
+  const hl = Math.hypot(fx, fz) || 1; o.kx = fx / hl; o.kz = fz / hl;
+}
+function initFree(o, home, R) {
+  o.home = home; o.R = R; o.mode = 'wander'; o.timer = 0;
+  o.cx = home.x + (R() - 0.5) * home.rx; o.cy = (home.y0 + home.y1) / 2; o.cz = home.z + (R() - 0.5) * home.rz;
+  o.vx = o.vy = o.vz = 0; const a = R() * TAU; o.hx = Math.cos(a); o.hy = 0; o.hz = Math.sin(a) * 0.4;
+  o.tx = o.cx; o.ty = o.cy; o.tz = o.cz; o.freq = 1.3; o.amp = 1;
+}
+function swimClownFree(o, dt) {
+  const H = o.home, R = o.R;
+  o.burst *= Math.exp(-dt * 1.2);
+  o.timer -= dt;
+  if (o.timer <= 0) {                                  // decide what to do next
+    o.mode = pickMode(R);
+    const side = o.cx > H.x ? -1 : 1;
+    if (o.mode === 'wander') { o.tx = H.x + (R() - 0.5) * 2 * H.rx; o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * 2 * H.rz; o.timer = 2.5 + R() * 2; }
+    if (o.mode === 'hover') { o.tx = o.cx; o.ty = o.cy; o.tz = o.cz; o.timer = 1.5 + R() * 2; }
+    if (o.mode === 'dart') { o.tx = H.x + side * H.rx * (0.6 + 0.4 * R()); o.ty = H.y0 + R() * (H.y1 - H.y0); o.tz = H.z + (R() - 0.5) * H.rz; o.timer = 1.2 + R(); o.burst = 1; }
+    if (o.mode === 'nestle') { o.tx = H.x + (R() - 0.5) * H.rx * 0.6; o.ty = H.y0; o.tz = H.z + (R() - 0.5) * H.rz * 0.6; o.timer = 2.5 + R() * 2; }
+    if (o.mode === 'turn') { o.tx = o.cx + side * H.rx * 0.9; o.ty = o.cy; o.tz = o.cz + (R() - 0.5) * 0.3; o.timer = 1.8 + R(); }
+  }
+  const sp = { wander: 0.24, hover: 0.04, dart: 0.85, nestle: 0.14, turn: 0.3 }[o.mode] * (o.pace || 1);
+  const ty = o.ty + (o.mode === 'hover' ? 0.03 * Math.sin(TIME * 2 + o.seed) : 0);
+  steerFree(o, dt, o.tx, ty, o.tz, sp);
+  const inArms = clamp(1 - (o.cy - H.y0) / 0.25, 0, 1);
+  o.freq = (o.mode === 'hover' ? 2.2 : 1.3) + 1.6 * o.burst + 0.8 * inArms; o.amp = (o.mode === 'hover' ? 0.5 : 1) + 0.6 * inArms;
+  o.phase += TAU * o.freq * dt;
+  // keep clear of the others in its group
+  for (const p of o.group || []) {
+    if (p === o) continue;
+    const vx = o.cx - p.cx, vy = o.cy - p.cy, vz = o.cz - p.cz, d = Math.hypot(vx, vy, vz) || 1e-3, need = 1.2 * Math.max(o.scale || 1, p.scale || 1);
+    if (d < need) { const k = (need - d) / d * 0.5; o.cx += vx * k; o.cz += vz * k; }
+  }
+}
 // sideways bend of the body at s
 const wag = (o, s) => (0.06 + 0.05 * o.burst) * o.amp * Math.sin(o.phase - 3.2 * s) * s * s - 0.01 * Math.sin(o.phase) * (1 - s);
 // which colour a point of the skin is: the bands are white with thin dark edges
@@ -1163,17 +1222,15 @@ function drawClown(o) {
 function swimDancer(o, dt) {
   const L = animals[0];
   o.burst *= Math.exp(-dt * 1.2);
-  o.freq = 1.6 + L.burst; o.amp = 1.1; o.phase += TAU * o.freq * dt;
-  o.d = L.d - 0.55 + 0.2 * Math.sin(TIME * 0.7); o.speed = L.speed;
-  ride(o, 0, 0.4);
-  for (let i = 0; i < 9; i++) o.F[i] *= o.scale || 1;          // the mate is a little smaller
-  const a = TIME * 1.2, side = 0.38 * Math.sin(a), up = 0.2 * Math.cos(a * 1.3), F = o.F;
-  o.cx += F[6] * side + F[3] * up; o.cy += F[7] * side + F[4] * up; o.cz += F[8] * side + F[5] * up;
+  o.orbit = (o.orbit || 0) + dt * 0.9 * (Math.sin(TIME * 0.11) > 0 ? 1 : -1);   // now one way round, now the other
+  const r = 1.45, tx = L.cx + Math.cos(o.orbit) * r, ty = L.cy + 0.12 * Math.sin(o.orbit * 1.7), tz = L.cz + Math.sin(o.orbit) * r * 0.45;
+  o.mode = L.mode === 'dart' ? 'dart' : 'wander';
+  steerFree(o, dt, tx, ty, tz, L.mode === 'dart' ? 0.9 : 0.35);
+  o.freq = 1.5 + L.burst; o.amp = 1.05; o.phase += TAU * o.freq * dt;
   // never into each other: keep a body length and a bit between them
-  o.cy = Math.max(o.cy, FLOOR + 0.82);                         // never down into the anemone's mouth
   let vx = o.cx - L.cx, vy = o.cy - L.cy, vz = o.cz - L.cz;
   const need = 1.35, dd = Math.hypot(vx, vy, vz);
-  if (dd < need) {                                              // and never into each other: open the gap sideways
+  if (dd < need) {
     const h = Math.hypot(vx, vz) || 1e-3, hh = Math.sqrt(Math.max(0, need * need - vy * vy));
     o.cx = L.cx + vx / h * hh; o.cz = L.cz + vz / h * hh;
   }
@@ -2506,7 +2563,8 @@ const KINDS = {
   shark:   { swim: swimShark, draw: drawShark, prof: SHARK_PROFILE, poke: o => { o.burst = 1; } },
   turtle:  { swim: swimTurtle, draw: drawTurtle, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
   manta:   { swim: swimManta, draw: drawManta, rigid: true, calm: true, poke: o => { o.phase += 0.6; } },
-  clown:   { swim: swimClown, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
+  clown:   { swim: swimClownFree, draw: drawClown, rigid: true, poke: o => { o.timer = 0; } },
+  clownfar: { swim: swimClownFree, draw: drawClown, rigid: true, calm: true, poke: () => {} },
   dancer:  { swim: swimDancer, draw: drawClown, rigid: true, poke: o => { o.burst = 1; } },
   clownlet: { swim: (o, dt) => { swimClown(o, dt); const F = o.F; for (let i = 0; i < 9; i++) F[i] *= o.scale; }, draw: drawClown, rigid: true, calm: true, poke: () => {} },
   fish:    { swim: swimFish, draw: drawFish3D, rigid: true, calm: true, poke: () => {} },
@@ -2584,13 +2642,23 @@ const SCENES = {
   clown: { rate: 'tail', tag: 'amphiprion ocellaris', tap: 'tap to make it dart', size: 0.7, view: { fixed: 0, half: 0.42, side: 0.74, pitch: 0.1 }, bands: DOLPHIN_BANDS,
     build() {
       HM = null;
-      animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0 })];
-      animals[1].scale = 0.85;
       const R = rng(42), pinks = [];
+      animals = [makeSwimmer(KINDS.clown, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 1 }), makeSwimmer(KINDS.dancer, { route: CLOWN_ROUTE, base: 0.24, start: 0, seed: 2 })];
+      const home = { x: 0.1, z: -0.5, rx: 0.85, rz: 0.35, y0: FLOOR + 0.82, y1: FLOOR + 1.2 };
+      initFree(animals[0], home, R); initFree(animals[1], home, R); animals[1].scale = 0.85;
+      animals[1].cx = animals[0].cx + 1.4; animals[1].timer = 1e9;
+      // far off, a second anemone with its own little family
+      const farHome = { x: 0.7, z: -6.2, rx: 0.7, rz: 0.3, y0: FLOOR + 2.75, y1: FLOOR + 3.05 }, family = [];
+      for (let k = 0; k < 4; k++) { const f = makeSwimmer(KINDS.clownfar, { route: CLOWN_ROUTE, base: 0.2, start: 0, seed: 10 + k }); f.scale = 0.7 + 0.12 * (k === 0); initFree(f, farHome, rng(500 + k)); f.pace = 0.9; family.push(f); }
+      for (const f of family) f.group = family;
+      animals.push(...family);
       for (let i = 0; i < 3; i++) { const c = makeColony('dendro', -1.9 + R() * 0.6, FLOOR, -1.2 + R() * 0.5, R, a => a[0]); c.m = 80; for (const t of c.tips) { t[0] *= 0.5; t[1] *= 0.5; t[2] *= 0.5; t[3] *= 0.5; } pinks.push(c); }
       ENV = { rocks: [], tufts: [], meadow: null, corals: pinks, shoals: [], stars: [], sandMat: 13, sandStep: 0.09, sandGain: 0.75, floorGlyph: 58, streaks: true, glow: 0.8, noSurface: true,
-              anems: [makeAnemone(0.1, -1.1, 22, 11, 1.7), makeAnemone(2.0, -1.5, 12, 12, 1.4), makeAnemone(-2.0, -1.6, 12, 13, 1.4), makeAnemone(0.9, -2.8, 10, 14, 1.3), makeAnemone(-1.1, -2.9, 10, 15, 1.3)] };
-      for (const A of ENV.anems) A.fishes = animals;
+              anems: [makeAnemone(0.1, -1.1, 22, 11, 1.7), makeAnemone(2.0, -1.5, 12, 12, 1.4), makeAnemone(-2.0, -1.6, 12, 13, 1.4), makeAnemone(0.9, -2.8, 10, 14, 1.3), makeAnemone(-1.1, -2.9, 10, 15, 1.3), makeAnemone(0.7, -6.5, 18, 16, 1.5)] };
+      ENV.anems[5].y = FLOOR + 1.9;                                // on top of a rock, out where the reef rises
+      ENV.rocks = [{ x: 0.7, z: -6.5, r: 1.6, f: 1.2, seed: 3 }];
+      for (const A of ENV.anems) A.fishes = animals.slice(0, 2);
+      ENV.anems[5].fishes = family;
     } },
   turtle: { rate: 'stroke', tag: 'chelonia mydas', tap: 'tap: an extra stroke', view: { yaw: -Math.PI / 2 + 0.22, half: 0.85, side: 1.45, pitch: 0.85 }, bands: DOLPHIN_BANDS,
     build() {
